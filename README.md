@@ -77,3 +77,10 @@ See the [M4 Mac mini validation guide](docs/gta-v-m4.md) for the Steam App ID,
 graphics backend comparison, and frame-time analysis.
 
 [Compatibility roadmap review](docs/compatibility-roadmap-review.md) tracks what this preview implements and what still requires engine work.
+
+For Steam update errors, use **Quit Steam**, then **Repair Steam Environment**
+in the Steam tab before opening the client again. Repair runs the engine's
+configuration update in place after saving its existing Windows registry files.
+For a black Steam window, keep **Use software rendering for the Steam
+interface** enabled and quit/reopen Steam so the client receives the new flags.
+**Open Steam Logs** shows the client-side bootstrap and browser logs.

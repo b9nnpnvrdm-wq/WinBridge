@@ -85,12 +85,12 @@ final class WindowsApplicationTests: XCTestCase {
             }
         }
 
-        func execute(_ action: WindowsApplication.Action) throws -> Int32 {
+        func execute(_ action: WindowsApplication.Action, mono: Bool = false) throws -> Int32 {
             let plan = try profile.command(action, bundledWine: wine, silentMSI: true)
             let process = plan.makeProcess()
             var environment = plan.environment
             let extras = environment["WINEDLLOVERRIDES"].map { ";\($0)" } ?? ""
-            environment["WINEDLLOVERRIDES"] = "mscoree,mshtml=\(extras)"
+            environment["WINEDLLOVERRIDES"] = (mono ? "mshtml=" : "mscoree,mshtml=") + extras
             environment["WINEDEBUG"] = "-all,err+module,err+msi"
             process.environment = environment
             try process.run()
@@ -114,6 +114,18 @@ final class WindowsApplicationTests: XCTestCase {
         XCTAssertFalse(installed.contains { FileManager.default.fileExists(atPath: $0.path) })
         profile.executable = fixtures.appendingPathComponent("font-probe.exe").path
         XCTAssertEqual(try execute(.run), 0, "A Windows GDI program must obtain nonzero font metrics")
+        profile.executable = fixtures.appendingPathComponent("mono-probe.exe").path
+        XCTAssertEqual(try execute(.run, mono: true), 0, "A .NET Framework program must run on bundled Mono")
+        let repair = try SteamCommand.repair(wine: wine, prefix: profile.prefix.path)
+        let updater = repair.makeProcess()
+        var repairEnvironment = repair.environment
+        repairEnvironment["WINEDLLOVERRIDES"] = "mshtml="
+        repairEnvironment["WINEDEBUG"] = "-all"
+        updater.environment = repairEnvironment
+        try updater.run()
+        updater.waitUntilExit()
+        XCTAssertEqual(updater.terminationStatus, 0)
+        XCTAssertEqual(try execute(.run, mono: true), 0, "The repaired environment must still run the .NET program")
     }
 
     private func temporaryDirectory() throws -> URL {

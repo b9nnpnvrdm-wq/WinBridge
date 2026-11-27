@@ -6,7 +6,7 @@ on:
       preview:
         description: WinBridge preview release tag to test
         required: true
-        default: preview-15a21786b335
+        default: preview-ead753855639
   workflow_run:
     workflows: [macOS preview and download page]
     types: [completed]
@@ -84,7 +84,11 @@ jobs:
           fi
           sleep 5
           echo 'Found installed Steam.exe.'
-          "$runtime/wine" "$client" -cef-disable-gpu >steam.log 2>&1 &
+          # The installer can start a client itself. Close only this disposable
+          # environment so the compatibility flags are used on the next launch.
+          "$runtime/wineserver" -k || true
+          "$runtime/wineserver" -w
+          "$runtime/wine" "$client" -cef-disable-gpu -cef-disable-gpu-compositing >steam.log 2>&1 &
           sleep 120
           tail -65 steam.log
           logs="$(dirname "$client")/logs"

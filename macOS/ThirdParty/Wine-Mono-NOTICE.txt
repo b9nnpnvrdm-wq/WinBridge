@@ -1,0 +1,11 @@
+Wine Mono 10.4.1, distributed as the matching shared runtime for Wine 11.0.
+The original runtime includes its upstream documentation and license files.
+Wine Mono comprises multiple open-source components. Consult the corresponding
+source archive for the component notices, licenses and build scripts.
+
+Upstream release and source:
+https://github.com/wine-mono/wine-mono/releases/tag/wine-mono-10.4.1
+https://github.com/wine-mono/wine-mono/releases/download/wine-mono-10.4.1/wine-mono-10.4.1-src.tar.xz
+
+The same corresponding source archive is available alongside this WinBridge
+preview at https://github.com/b9nnpnvrdm-wq/WinBridge/releases.

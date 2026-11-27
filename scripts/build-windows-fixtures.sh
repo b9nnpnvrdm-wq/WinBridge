@@ -18,6 +18,7 @@ lld-link /lib /machine:x64 "/def:$source_dir/gdi32.def" "/out:$work/gdi32.lib"
 clang --target=x86_64-pc-windows-msvc -fno-stack-protector -c "$source_dir/font-probe.c" -o "$work/font-probe.obj"
 lld-link /entry:winbridge_main /subsystem:console /nodefaultlib "/out:$output/font-probe.exe" \
   "$work/font-probe.obj" "$work/gdi32.lib"
+mcs -optimize+ -out:"$output/mono-probe.exe" "$source_dir/MonoProbe.cs"
 (
   cd "$source_dir"
   wixl -o "$output/fixture.msi" installer.wxs

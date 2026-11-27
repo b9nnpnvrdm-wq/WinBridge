@@ -1,0 +1,44 @@
+diff --git a/loader/wine_info.plist.in b/loader/wine_info.plist.in
+--- a/loader/wine_info.plist.in
++++ b/loader/wine_info.plist.in
+@@ -12 +12 @@
+-    <string>org.winehq.wine</string>
++    <string>com.winbridge.engine</string>
+@@ -16 +16 @@
+-    <string>Wine</string>
++    <string>WinBridge</string>
+diff --git a/dlls/winemac.drv/cocoa_app.m b/dlls/winemac.drv/cocoa_app.m
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -247 +246,0 @@
+-            submenu = [[[NSMenu alloc] initWithTitle:WineLocalizedString(STRING_MENU_WINE)] autorelease];
+@@ -248,0 +248,2 @@
++            if (![bundleName length]) bundleName = @"WinBridge";
++            submenu = [[[NSMenu alloc] initWithTitle:bundleName] autorelease];
+@@ -274 +275 @@
+-            [item setTitle:WineLocalizedString(STRING_MENU_WINE)];
++            [item setTitle:bundleName];
+diff --git a/programs/wineboot/wineboot.rc b/programs/wineboot/wineboot.rc
+--- a/programs/wineboot/wineboot.rc
++++ b/programs/wineboot/wineboot.rc
+@@ -41 +41 @@
+-CAPTION "Wine"
++CAPTION "WinBridge"
+@@ -45 +45 @@
+-    LTEXT "The Wine configuration in %s is being updated, please wait...",
++    LTEXT "WinBridge is updating the Windows environment in %s. Please wait.",
+diff --git a/programs/winedbg/winedbg.rc b/programs/winedbg/winedbg.rc
+--- a/programs/winedbg/winedbg.rc
++++ b/programs/winedbg/winedbg.rc
+@@ -37 +37 @@
+-    IDS_AUTO_CAPTION     "Program Error"
++    IDS_AUTO_CAPTION     "WinBridge App Error"
+@@ -50 +50 @@
+-CAPTION "Program Error"
++CAPTION "WinBridge App Error"
+@@ -57 +57 @@
+-    CONTROL         "This can be caused by a problem in the program or a deficiency in Wine. \
++    CONTROL         "This can be caused by a problem in the program or a compatibility issue in WinBridge. \
+@@ -67 +67 @@
+-CAPTION "Program Error Details"
++CAPTION "WinBridge App Error Details"

@@ -26,7 +26,7 @@ final class SteamCommandTests: XCTestCase {
             windowsExecutable: fixture.steam.path, installing: false, appID: "271590",
             softwareRendering: true
         )
-        XCTAssertEqual(open.arguments, [fixture.steam.path, "-cef-disable-gpu", "-applaunch", "271590"])
+        XCTAssertEqual(open.arguments, [fixture.steam.path, "-cef-disable-gpu", "-cef-disable-gpu-compositing", "-applaunch", "271590"])
         let install = try SteamCommand.make(
             wine: fixture.wine.path, prefix: fixture.prefix.path,
             windowsExecutable: fixture.steam.path, installing: true, softwareRendering: true
@@ -57,6 +57,21 @@ final class SteamCommandTests: XCTestCase {
         XCTAssertEqual(command.arguments, [fixture.steam.path])
         XCTAssertTrue(FileManager.default.fileExists(atPath: prefix.deletingLastPathComponent().path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: prefix.path))
+    }
+
+    func testRepairsBackUpExistingRegistryAndKeepTheSteamPrefix() throws {
+        let fixture = try makeFixture()
+        let file = fixture.prefix.appendingPathComponent("system.reg")
+        let registry = Data("original registry".utf8)
+        try registry.write(to: file)
+        let repair = try SteamCommand.repair(wine: fixture.wine.path, prefix: fixture.prefix.path)
+        XCTAssertEqual(repair.arguments, ["wineboot", "--update"])
+        XCTAssertEqual(repair.environment["WINEPREFIX"], fixture.prefix.path)
+        XCTAssertEqual(try Data(contentsOf: file), registry)
+        let backups = fixture.prefix.appendingPathComponent("WinBridge Registry Backups")
+        let contents = try FileManager.default.contentsOfDirectory(at: backups, includingPropertiesForKeys: nil)
+        let backup = try XCTUnwrap(contents.first)
+        XCTAssertEqual(try Data(contentsOf: backup.appendingPathComponent("system.reg")), registry)
     }
 
     private func makeFixture() throws -> (wine: URL, prefix: URL, steam: URL) {

@@ -42,6 +42,17 @@ sparkle=$(find "$root/macOS/.build/artifacts" -type d -name Sparkle.framework -p
 ditto "$sparkle" "$staged_app/Contents/Frameworks/Sparkle.framework"
 install -m 644 "$root/macOS/ThirdParty/Sparkle-LICENSE.txt" "$shared/Sparkle-LICENSE.txt"
 tar -xf "$wine_archive" -C "$shared/Wine"
+mono_archive=wine-mono-10.4.1-x86.tar.xz
+curl --fail --location --retry 2 --silent --show-error \
+  "https://github.com/wine-mono/wine-mono/releases/download/wine-mono-10.4.1/$mono_archive" \
+  -o "$temporary/$mono_archive"
+printf '%s  %s\n' a16606ef0724202e6a6848ece6e0cbba64d11e2f11aefe744af1d93c6d9f99bb \
+  "$temporary/$mono_archive" | shasum -a 256 --check
+mono_dir="$shared/Wine/share/wine/mono"
+mkdir -p "$mono_dir"
+tar -xf "$temporary/$mono_archive" -C "$mono_dir"
+test -d "$mono_dir/wine-mono-10.4.1"
+install -m 644 "$root/macOS/ThirdParty/Wine-Mono-NOTICE.txt" "$mono_dir/NOTICE.txt"
 
 export WINBRIDGE_BUILD_NUMBER="${WINBRIDGE_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 python3 "$root/scripts/configure-app-plist.py" "$plist"

@@ -17,7 +17,9 @@ public enum SteamCommand {
         try WineInvocation.preparePrefix(prefix, allowNew: installing)
 
         var arguments = [program.path]
-        if !installing && softwareRendering { arguments.append("-cef-disable-gpu") }
+        if !installing && softwareRendering {
+            arguments += ["-cef-disable-gpu", "-cef-disable-gpu-compositing"]
+        }
         let appID = appID.trimmingCharacters(in: .whitespacesAndNewlines)
         if !installing && !appID.isEmpty {
             guard appID.utf8.count <= 10,
@@ -36,4 +38,36 @@ public enum SteamCommand {
         )
     }
 
+    public static func quit(wine: String, prefix: String, client: String) throws -> WineInvocation {
+        let launch = try make(wine: wine, prefix: prefix, windowsExecutable: client, installing: false)
+        return WineInvocation(
+            executable: launch.executable, arguments: launch.arguments + ["-shutdown"],
+            directory: launch.directory, environment: launch.environment
+        )
+    }
+
+    public static func repair(
+        wine: String, prefix: String,
+        environment inherited: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> WineInvocation {
+        let loader = try WineInvocation.loader(wine)
+        let prefix = try WineInvocation.absolutePath(prefix, label: "Steam environment")
+        try WineInvocation.preparePrefix(prefix, allowNew: false)
+        let files = FileManager.default
+        let backup = prefix.appendingPathComponent("WinBridge Registry Backups")
+            .appendingPathComponent(UUID().uuidString)
+        try files.createDirectory(at: backup, withIntermediateDirectories: true)
+        for name in ["system.reg", "user.reg", "userdef.reg"] {
+            let source = prefix.appendingPathComponent(name)
+            if (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                try files.copyItem(at: source, to: backup.appendingPathComponent(name))
+            }
+        }
+        var environment = inherited
+        environment["WINEPREFIX"] = prefix.path
+        return WineInvocation(
+            executable: loader, arguments: ["wineboot", "--update"],
+            directory: prefix, environment: environment
+        )
+    }
 }

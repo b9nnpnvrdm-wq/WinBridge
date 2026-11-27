@@ -87,7 +87,7 @@ private struct SetupView: View {
     @State private var installer = ""
     @ObservedObject var launcher: Launcher
     @ObservedObject var preferences: EnginePreferences
-    @AppStorage("steamSoftwareRendering") private var steamSoftwareRendering = false
+    @AppStorage("steamSoftwareRendering") private var steamSoftwareRendering = true
 
     var body: some View {
         ScrollView {
@@ -126,10 +126,14 @@ private struct SetupView: View {
                         .textFieldStyle(.roundedBorder)
                     Toggle("Show Metal Performance HUD", isOn: $metalHUD)
                     Toggle("Use software rendering for the Steam interface", isOn: $steamSoftwareRendering)
-                    if let logs = steamLogs {
-                        Button("Open Steam Logs") { NSWorkspace.shared.open(logs) }
+                    HStack {
+                        Button("Quit Steam") { quitSteam() }
+                            .disabled(launcher.isRunning(prefix) || resolvedSteam == nil)
+                        if let logs = steamLogs {
+                            Button("Open Steam Logs") { NSWorkspace.shared.open(logs) }
+                        }
                     }
-                    Text("If Steam opens a blank window, quit Steam before retrying with software rendering.")
+                    Text("If the Steam window is black, quit Steam, leave software rendering enabled, then reopen it.")
                         .font(.callout).foregroundStyle(.secondary)
                     if preferences.useBundled {
                         Text("This Wine build still lacks some TLS and media features. If Steam cannot update or sign in, try a compatible external Wine build in Settings.")
@@ -142,6 +146,11 @@ private struct SetupView: View {
                     }
                     Text("GTA V Legacy Story Mode is a test target. Gameplay through WinBridge is still unverified.")
                         .font(.callout).foregroundStyle(.secondary)
+                }
+                step("Repair the Steam environment", icon: "wrench.and.screwdriver") {
+                    Text("Close Steam and any running games before repair. WinBridge backs up the Windows registry and updates the environment in place.")
+                    Button("Repair Steam Environment") { repairSteam() }
+                        .disabled(launcher.isRunning(prefix))
                 }
             }
             .padding(28)
@@ -177,9 +186,9 @@ private struct SetupView: View {
         let program = installing ? executable : (resolvedSteam ?? "")
         if !installing { steamClient = program }
         launcher.start(
-            runningMessage: installing ? "Steam Setup is running…" : "Wine is running…",
+            runningMessage: installing ? "Running Steam Setup…" : "Opening Steam…",
             completionMessage: installing ? "Steam Setup exited. Open Steam to continue." :
-                "Wine exited. Check Steam for the launch result."
+                "The Steam launch command exited. Open Steam Logs to check its startup."
         ) {
             try SteamCommand.make(
                 wine: preferences.engine ?? "",
@@ -187,6 +196,25 @@ private struct SetupView: View {
                 appID: appID, metalHUD: !installing && metalHUD,
                 softwareRendering: !installing && steamSoftwareRendering
             )
+        }
+    }
+
+    private func quitSteam() {
+        guard let client = resolvedSteam else { return }
+        launcher.start(
+            runningMessage: "Asking Steam to quit…",
+            completionMessage: "The Steam quit command finished. Reopen Steam after it closes."
+        ) {
+            try SteamCommand.quit(wine: preferences.engine ?? "", prefix: prefix, client: client)
+        }
+    }
+
+    private func repairSteam() {
+        launcher.start(
+            runningMessage: "WinBridge is updating the Steam environment…",
+            completionMessage: "WinBridge finished the Steam environment update."
+        ) {
+            try SteamCommand.repair(wine: preferences.engine ?? "", prefix: prefix)
         }
     }
 
@@ -277,12 +305,12 @@ final class Launcher: ObservableObject {
                     guard let self else { return }
                     self.active.removeValue(forKey: prefix)
                     if terminated {
-                        self.status = "Wine stopped with signal \(code). Check the log."
+                        self.status = "WinBridge detected a process stop (signal \(code)). Open the log for details."
                     } else if code != 0 {
-                        self.status = "Wine exited with status \(code). Check the log."
+                        self.status = "The Windows command exited with status \(code). Open the log for details."
                     } else {
                         let seconds = ProcessInfo.processInfo.systemUptime - startTime
-                        self.status = "\(completionMessage) Wine process time \(seconds.formatted(.number.precision(.fractionLength(1)))) s."
+                        self.status = "\(completionMessage) Process time \(seconds.formatted(.number.precision(.fractionLength(1)))) s."
                     }
                 }
             }
@@ -293,7 +321,7 @@ final class Launcher: ObservableObject {
         } catch {
             let failure = error as NSError
             if failure.domain == NSPOSIXErrorDomain && failure.code == 86 {
-                status = "Wine could not run for this CPU. The built-in engine requires Rosetta."
+                status = "WinBridge could not start the engine for this CPU. The built-in engine requires Rosetta."
             } else {
                 status = error.localizedDescription
             }

@@ -31,8 +31,8 @@ git -C "$work/wine-source" fetch --quiet --depth=1 https://github.com/wine-mirro
 git -C "$work/wine-source" checkout --quiet --detach FETCH_HEAD
 [[ $(git -C "$work/wine-source" rev-parse HEAD) == "$wine_commit" ]]
 # Archive the exact patched source tree used for compilation.
-git -C "$work/wine-source" apply --unidiff-zero "$root/scripts/patches/wine-idle-server.patch"
-git -C "$work/wine-source" add server/main.c
+git -C "$work/wine-source" apply --unidiff-zero "$root"/scripts/patches/*.patch
+git -C "$work/wine-source" add -u
 patched_tree=$(git -C "$work/wine-source" write-tree)
 git -C "$work/wine-source" archive --format=tar --prefix=wine-11.0/ "$patched_tree" \
   | gzip -n > "$output/wine-11.0-source.tar.gz"

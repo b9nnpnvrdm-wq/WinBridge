@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y lld wixl
+      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y lld wixl mono-mcs
       - run: ./scripts/build-windows-fixtures.sh
       - uses: actions/upload-artifact@v7
         with:
@@ -146,9 +146,13 @@ jobs:
             echo "This revision already has a preview release."
             exit 0
           fi
+          mono_source=wine-mono-10.4.1-src.tar.xz
+          curl --fail --location --retry 2 --silent --show-error \
+            "https://github.com/wine-mono/wine-mono/releases/download/wine-mono-10.4.1/$mono_source" -o "$mono_source"
+          printf '%s  %s\n' 128e335396689e466dff5e1aa0770a714dbe3d16397fc4ddbb8a80999c67323b "$mono_source" | sha256sum --check
           gh release create "$tag" WinBridge-arm64.zip WinBridge-arm64.zip.sha256 wine-11.0-source.tar.gz freetype-2.15.0.tar.xz \
-            --target "$GITHUB_SHA" --prerelease --title "WinBridge macOS preview (${GITHUB_SHA:0:12})" \
-            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Includes first-run Wine setup, Finder and drag-and-drop app imports, and the Wine 11.0 runtime with FreeType and corresponding source. Requires Rosetta. GTA V gameplay remains unverified."
+            "$mono_source" --target "$GITHUB_SHA" --prerelease --title "WinBridge macOS preview (${GITHUB_SHA:0:12})" \
+            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Includes the WinBridge Wine 11.0 runtime with FreeType and Wine Mono, associated source archives, and Steam repair and interface compatibility controls. Requires Rosetta. GTA V gameplay remains unverified."
         working-directory: dist
 
   pages:
