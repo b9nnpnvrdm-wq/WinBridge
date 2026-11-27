@@ -47,8 +47,17 @@ public struct WineInvocation {
         let drive = prefix.appendingPathComponent("drive_c")
         let registry = prefix.appendingPathComponent("system.reg")
         var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: drive.path, isDirectory: &isDirectory)
-            && isDirectory.boolValue
-            && (try? registry.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        let files = FileManager.default
+        guard files.fileExists(atPath: drive.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return false
+        }
+        if (try? registry.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+            return true
+        }
+        // Wine can finish bootstrapping before wineserver first flushes the registry.
+        let cDrive = prefix.appendingPathComponent("dosdevices/c:")
+        let ntdll = drive.appendingPathComponent("windows/system32/ntdll.dll")
+        return cDrive.resolvingSymlinksInPath().path == drive.resolvingSymlinksInPath().path
+            && files.fileExists(atPath: ntdll.path)
     }
 }

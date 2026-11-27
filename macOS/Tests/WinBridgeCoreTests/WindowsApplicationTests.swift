@@ -60,6 +60,17 @@ final class WindowsApplicationTests: XCTestCase {
         profile.executable = fixtures.appendingPathComponent("app/fixture.exe").path
         profile.installer = fixtures.appendingPathComponent("fixture.msi").path
         let other = WindowsApplication(name: "Isolated", location: root)
+        let server = URL(fileURLWithPath: wine).deletingLastPathComponent().appendingPathComponent("wineserver")
+        let testPrefix = profile.prefix.path
+        defer {
+            for flag in ["-k", "-w"] {
+                let process = Process()
+                process.executableURL = server
+                process.arguments = [flag]
+                process.environment = ["WINEPREFIX": testPrefix]
+                if (try? process.run()) != nil { process.waitUntilExit() }
+            }
+        }
 
         func execute(_ action: WindowsApplication.Action) throws -> Int32 {
             let plan = try profile.command(action, bundledWine: wine, silentMSI: true)
@@ -67,7 +78,7 @@ final class WindowsApplicationTests: XCTestCase {
             var environment = plan.environment
             let extras = environment["WINEDLLOVERRIDES"].map { ";\($0)" } ?? ""
             environment["WINEDLLOVERRIDES"] = "mscoree,mshtml=\(extras)"
-            environment["WINEDEBUG"] = "-all"
+            environment["WINEDEBUG"] = "-all,err+module,err+msi"
             process.environment = environment
             try process.run()
             process.waitUntilExit()
