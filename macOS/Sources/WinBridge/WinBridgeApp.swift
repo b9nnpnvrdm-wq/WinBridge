@@ -7,12 +7,19 @@ import WinBridgeCore
 @MainActor
 struct WinBridgeApp: App {
     private let updates = AppUpdates()
+    @StateObject private var launcher = Launcher()
 
     var body: some Scene {
-        WindowGroup("WinBridge") {
-            SetupView()
-                .frame(minWidth: 640, idealWidth: 720, minHeight: 540, idealHeight: 760)
-                .task { updates.start() }
+        Window("WinBridge", id: "main") {
+            TabView {
+                ApplicationsView(launcher: launcher)
+                    .tabItem { Label("Windows Apps", systemImage: "square.grid.2x2") }
+                SetupView(launcher: launcher)
+                    .tabItem { Label("Steam", systemImage: "gamecontroller") }
+            }
+            .safeAreaInset(edge: .bottom) { LauncherStatus(launcher: launcher) }
+            .frame(minWidth: 660, idealWidth: 820, minHeight: 560, idealHeight: 760)
+            .task { updates.start() }
         }
         .commands {
             CommandGroup(after: .appInfo) {
@@ -66,7 +73,7 @@ private struct SetupView: View {
     @AppStorage("steamAppID") private var appID = ""
     @AppStorage("metalHUD") private var metalHUD = false
     @State private var installer = ""
-    @StateObject private var launcher = Launcher()
+    @ObservedObject var launcher: Launcher
 
     var body: some View {
         ScrollView {
@@ -117,9 +124,6 @@ private struct SetupView: View {
                         Button(appID.isEmpty ? "Open Steam" : "Launch Game") { start(steamClient) }
                             .buttonStyle(.borderedProminent)
                             .disabled(launcher.running || (steamClient.isEmpty && suggestedClient == nil))
-                        if let log = launcher.log {
-                            Button("Open Log") { NSWorkspace.shared.open(log) }
-                        }
                     }
                     Text("GTA V Legacy Story Mode is a test target. Gameplay through WinBridge is still unverified.")
                         .font(.callout).foregroundStyle(.secondary)
@@ -129,24 +133,7 @@ private struct SetupView: View {
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 10) {
-                if launcher.running { ProgressView().controlSize(.small) }
-                Text(launcher.status).font(.callout).textSelection(.enabled)
-                Spacer()
-            }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 14)
-            .background(.regularMaterial)
-        }
         .onChange(of: prefix) { _, _ in steamClient = "" }
-    }
-
-    private var bundledWine: String? {
-        guard let url = Bundle.main.sharedSupportURL?
-            .appendingPathComponent("Wine/bin/wine"),
-              FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
-        return url.path
     }
 
     private var suggestedClient: String? {
@@ -164,10 +151,16 @@ private struct SetupView: View {
         let program = executable.isEmpty ? (suggestedClient ?? "") : executable
         if !installing && steamClient.isEmpty { steamClient = program }
         launcher.start(
-            wine: (useBundledWine ? bundledWine : nil) ?? wine,
-            prefix: prefix, executable: program, installing: installing,
-            appID: appID, metalHUD: !installing && metalHUD
-        )
+            runningMessage: installing ? "Steam Setup is running…" : "Wine is running…",
+            completionMessage: installing ? "Steam Setup exited. Open Steam to continue." :
+                "Wine exited. Check Steam for the launch result."
+        ) {
+            try SteamCommand.make(
+                wine: (useBundledWine ? bundledWine : nil) ?? wine,
+                prefix: prefix, windowsExecutable: program, installing: installing,
+                appID: appID, metalHUD: !installing && metalHUD
+            )
+        }
     }
 
     private func step<Content: View>(
@@ -200,23 +193,45 @@ private struct SetupView: View {
     }
 }
 
+var bundledWine: String? {
+    guard let url = Bundle.main.sharedSupportURL?.appendingPathComponent("Wine/bin/wine"),
+          FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
+    return url.path
+}
+
+struct LauncherStatus: View {
+    @ObservedObject var launcher: Launcher
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if launcher.running { ProgressView().controlSize(.small) }
+            Text(launcher.status).font(.callout).textSelection(.enabled)
+            Spacer()
+            if let log = launcher.log {
+                Button("Open Log") { NSWorkspace.shared.open(log) }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .background(.regularMaterial)
+    }
+}
+
 @MainActor
-private final class Launcher: ObservableObject {
-    @Published private(set) var status = "Choose a Windows Steam installer to begin."
+final class Launcher: ObservableObject {
+    @Published private(set) var status = "Choose an application to begin."
     @Published private(set) var running = false
     @Published private(set) var log: URL?
     private var process: Process?
 
+    func report(_ error: Error) { status = error.localizedDescription }
+
     func start(
-        wine: String, prefix: String, executable: String,
-        installing: Bool, appID: String, metalHUD: Bool
+        runningMessage: String, completionMessage: String, command: () throws -> WineInvocation
     ) {
         guard !running else { return }
         do {
-            let command = try SteamCommand.make(
-                wine: wine, prefix: prefix, windowsExecutable: executable,
-                installing: installing, appID: appID, metalHUD: metalHUD
-            )
+            let child = try command().makeProcess()
             let files = FileManager.default
             let folder = try files.url(
                 for: .applicationSupportDirectory, in: .userDomainMask,
@@ -228,11 +243,6 @@ private final class Launcher: ObservableObject {
             let handle = try FileHandle(forWritingTo: url)
             defer { try? handle.close() }
 
-            let child = Process()
-            child.executableURL = command.executable
-            child.currentDirectoryURL = command.directory
-            child.arguments = command.arguments
-            child.environment = command.environment
             child.standardOutput = handle
             child.standardError = handle
             child.terminationHandler = { [weak self] result in
@@ -246,10 +256,8 @@ private final class Launcher: ObservableObject {
                         self.status = "Wine stopped with signal \(code). Check the log."
                     } else if code != 0 {
                         self.status = "Wine exited with status \(code). Check the log."
-                    } else if installing {
-                        self.status = "Steam Setup exited. Open Steam to continue."
                     } else {
-                        self.status = "Wine exited. Check Steam for the launch result."
+                        self.status = completionMessage
                     }
                 }
             }
@@ -257,7 +265,7 @@ private final class Launcher: ObservableObject {
             try child.run()
             process = child
             running = true
-            status = installing ? "Steam Setup is running…" : "Wine is running…"
+            status = runningMessage
         } catch {
             let failure = error as NSError
             if failure.domain == NSPOSIXErrorDomain && failure.code == 86 {

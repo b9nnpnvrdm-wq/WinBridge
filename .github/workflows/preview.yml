@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'macOS/**'
+      - 'tests/windows-fixtures/**'
       - 'pages/**'
       - 'scripts/**'
       - 'docs/bundled-wine.md'
@@ -20,15 +21,46 @@ permissions:
 
 jobs:
   wine:
-    name: Build Wine 11.0 for x86-64 macOS
+    name: Provision Wine 11.0 for x86-64 macOS
     runs-on: macos-15-intel
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - run: brew list --versions bison || brew install bison
-      - run: ./scripts/build-wine-macos.sh
+      - uses: actions/cache@v5
+        id: wine-cache
+        with:
+          path: |
+            dist/WinBridge-Wine-runtime.tar.gz
+            dist/wine-11.0-source.tar.gz
+          key: winbridge-wine-macos15-x64-${{ hashFiles('scripts/build-wine-macos.sh', 'scripts/audit-wine-runtime.py', 'docs/bundled-wine.md') }}
+      - name: Match the previously verified Wine build recipe
+        if: steps.wine-cache.outputs.cache-hit != 'true'
+        id: baseline
+        run: |
+          if git diff --quiet 6747142d9284b6b7473f747d7d329616a6bc8e5e HEAD -- \
+            scripts/build-wine-macos.sh scripts/audit-wine-runtime.py docs/bundled-wine.md; then
+            echo "matches=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v8
+        if: steps.baseline.outputs.matches == 'true'
+        id: reuse
+        continue-on-error: true
+        with:
+          github-token: ${{ github.token }}
+          run-id: 46041068543
+          name: winbridge-wine
+          path: dist
+      - name: Build Wine if no matching artifact is available
+        if: steps.wine-cache.outputs.cache-hit != 'true' && steps.reuse.outcome != 'success'
+        run: |
+          brew list --versions bison || brew install bison
+          ./scripts/build-wine-macos.sh
       - uses: actions/upload-artifact@v7
         with:
           name: winbridge-wine
@@ -37,6 +69,22 @@ jobs:
             dist/wine-11.0-source.tar.gz
           if-no-files-found: error
           compression-level: 0
+
+  fixtures:
+    name: Build Windows EXE, DLL and installer fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y wixl
+      - run: ./scripts/build-windows-fixtures.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-fixtures
+          path: dist/windows-fixtures/
+          if-no-files-found: error
 
   swift-tests:
     name: Test the Apple Silicon launcher and updater build
@@ -52,7 +100,7 @@ jobs:
   build:
     name: Build and test Apple Silicon app
     runs-on: macos-15
-    needs: [wine, swift-tests]
+    needs: [wine, swift-tests, fixtures]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -68,6 +116,15 @@ jobs:
           WINBRIDGE_UPDATE_PUBLIC_KEY: ${{ vars.WINBRIDGE_UPDATE_PUBLIC_KEY }}
       - name: Smoke test bundled Wine under Rosetta
         run: ./scripts/smoke-test-wine-macos.sh dist/WinBridge.app
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-fixtures
+          path: dist/windows-fixtures
+      - name: Test Windows application launch and MSI lifecycle
+        run: |
+          export WINBRIDGE_TEST_WINE="$PWD/dist/WinBridge.app/Contents/SharedSupport/Wine/bin/wine"
+          export WINBRIDGE_TEST_FIXTURES="$PWD/dist/windows-fixtures"
+          xcrun swift test --package-path macOS --arch arm64 --filter WindowsApplicationTests.testRealWindowsRuntimeFixtures
       - uses: actions/upload-artifact@v7
         with:
           name: winbridge-macos
@@ -103,7 +160,7 @@ jobs:
           fi
           gh release create "$tag" WinBridge-arm64.zip WinBridge-arm64.zip.sha256 wine-11.0-source.tar.gz \
             --target "$GITHUB_SHA" --prerelease --title "WinBridge macOS preview (${GITHUB_SHA:0:12})" \
-            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Includes a baseline Wine 11.0 runtime and its exact source. Requires Rosetta. GTA V compatibility remains unverified."
+            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Includes isolated Windows app profiles, EXE and MSI support, optional DLL imports, and the Wine 11.0 runtime with corresponding source. Requires Rosetta. GTA V gameplay remains unverified."
         working-directory: dist
 
   pages:

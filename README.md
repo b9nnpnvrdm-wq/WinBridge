@@ -6,12 +6,13 @@ WinBridge is an Apple Silicon-first project for running Windows applications and
 
 WinBridge has a native graphical preview for Apple Silicon and macOS 14 or
 later. Download the macOS preview ZIP from [GitHub Releases](https://github.com/b9nnpnvrdm-wq/WinBridge/releases),
-unzip it, and double-click `WinBridge.app`. The app walks you through choosing
-the engine, installing Windows Steam, and requesting a game by App ID. The app
-includes [Wine 11.0](docs/bundled-wine.md) and uses Rosetta to run it. You can
-choose an external engine for broader compatibility. The app does not require
-Python. [Automatic update setup](docs/automatic-updates.md) describes how
-signed releases can be distributed to existing installations.
+unzip it, and double-click `WinBridge.app`. The **Windows Apps** tab runs Windows EXEs,
+installs through EXE or MSI, and uninstalls MSI packages. Create a separate
+profile for each app to keep its Windows files and registry isolated. The
+**Steam** tab guides you through Steam Setup and launching by App ID. Windows
+processes use the included [Wine 11.0](docs/bundled-wine.md) under Rosetta.
+The app does not require Python. [Automatic update setup](docs/automatic-updates.md)
+describes how signed releases reach existing installations.
 
 The preview is ad hoc signed. Developer ID signing and Apple notarization
 are pending. See [macOS packaging and download publishing](docs/macos-preview.md)
@@ -70,3 +71,5 @@ another process. The supplied Wine build and prefix determine graphics support.
 GTA V Legacy Story Mode is the first demanding game target.
 See the [M4 Mac mini validation guide](docs/gta-v-m4.md) for the Steam App ID,
 graphics backend comparison, and frame-time analysis.
+
+[Compatibility roadmap review](docs/compatibility-roadmap-review.md) tracks what this preview implements and what still requires engine work.
