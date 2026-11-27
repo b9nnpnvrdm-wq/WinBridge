@@ -58,7 +58,8 @@ private final class AppUpdates {
 
 private struct SetupView: View {
     @AppStorage("wine") private var wine = ""
-    @AppStorage("useBundledWine") private var useBundledWine = true
+    @AppStorage("useBundledWine") private var useBundledWine =
+        UserDefaults.standard.string(forKey: "wine")?.isEmpty ?? true
     @AppStorage("prefix") private var prefix = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/WinBridge/Steam").path
     @AppStorage("steamClient") private var steamClient = ""

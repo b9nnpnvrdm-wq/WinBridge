@@ -32,7 +32,9 @@ tar -xf "$work/toolchain.tar.xz" -C "$work"
 export MACOSX_DEPLOYMENT_TARGET=14.0
 export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 export CC="$(xcrun --sdk macosx --find clang)"
-export PATH="$(dirname "$CC"):$(brew --prefix bison)/bin:$PATH:$work/$toolchain/bin"
+export BISON="$(brew --prefix bison)/bin/bison"
+export PATH="$(dirname "$BISON"):$(dirname "$CC"):$PATH:$work/$toolchain/bin"
+"$BISON" --version
 printf 'int main(void) { return 0; }\n' | "$CC" -x c - -o "$work/native-probe"
 "$work/native-probe"
 (
@@ -46,7 +48,7 @@ printf 'int main(void) { return 0; }\n' | "$CC" -x c - -o "$work/native-probe"
     --without-krb5 --without-netapi --without-opencl --without-oss --without-pcap \
     --without-pcsclite --without-pulse --without-sane --without-sdl --without-udev \
     --without-usb --without-v4l2 --without-vulkan; then
-    grep -E 'error:|clang:|ld:|SDKROOT' config.log | tail -60 || true
+    grep -E 'error:|clang:|ld:|SDKROOT|bison:|m4:' config.log | tail -60 || true
     exit 1
   fi
   make -j"$(sysctl -n hw.ncpu)"
