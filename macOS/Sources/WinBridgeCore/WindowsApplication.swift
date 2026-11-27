@@ -67,7 +67,8 @@ public struct WindowsApplication: Codable, Identifiable, Equatable {
                     try WindowsComponents.apply(for: architecture, in: prefix, to: &environment)
                 }
             case .msiContainer where action != .run:
-                arguments = ["msiexec", action == .install ? "/i" : "/x", file.path]
+                // Wine maps the launch working directory to a Windows drive.
+                arguments = ["msiexec", action == .install ? "/i" : "/x", ".\\\(file.lastPathComponent)"]
                 if silentMSI { arguments.append("/qn") }
             default:
                 throw WindowsError(action == .uninstall

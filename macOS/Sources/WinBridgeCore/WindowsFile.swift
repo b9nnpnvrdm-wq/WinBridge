@@ -26,11 +26,13 @@ public enum WindowsFile: Equatable {
     }
 
     public static func inspect(_ url: URL) throws -> WindowsFile {
-        let info = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard info.isRegularFile == true else { throw WindowsError("Choose a regular Windows file.") }
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular else {
+            throw WindowsError("Choose a regular Windows file.")
+        }
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
-        let size = UInt64(info.fileSize ?? 0)
+        let size = try file.seekToEnd()
         let dos = try bytes(file, at: 0, count: 64)
         if url.pathExtension.lowercased() == "msi" {
             guard size >= 512, dos.prefix(8).elementsEqual([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) else {
