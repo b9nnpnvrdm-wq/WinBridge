@@ -61,10 +61,8 @@ freetype_install="$work/freetype-install"
   make install
 )
 freetype_dylib="$freetype_install/lib/libfreetype.6.dylib"
-# Wine's macOS configure probe normally strips the directory from the install
-# name. Keep a relocatable path because this dependency lives beside win32u.so,
-# outside the user's system library search paths.
-install_name_tool -id '@loader_path/libfreetype.6.dylib' "$freetype_dylib"
+# The native font generator links against FreeType during the build and needs
+# its normal install name. Only the packaged copy and runtime references move.
 export PKG_CONFIG_PATH="$freetype_install/lib/pkgconfig"
 export ac_cv_lib_soname_freetype='@loader_path/libfreetype.6.dylib'
 (
@@ -86,7 +84,11 @@ export ac_cv_lib_soname_freetype='@loader_path/libfreetype.6.dylib'
 )
 runtime="$work/install/winbridge-wine"
 [[ -x "$runtime/bin/wine" && -x "$runtime/bin/wineserver" ]]
-install -m 755 "$freetype_dylib" "$runtime/lib/wine/x86_64-unix/libfreetype.6.dylib"
+embedded_freetype="$runtime/lib/wine/x86_64-unix/libfreetype.6.dylib"
+freetype_build_id=$(otool -D "$freetype_dylib" | sed -n '2p')
+test -n "$freetype_build_id"
+install -m 755 "$freetype_dylib" "$embedded_freetype"
+install_name_tool -id '@loader_path/libfreetype.6.dylib' "$embedded_freetype"
 mkdir -p "$runtime/share/licenses/freetype"
 install -m 644 "$freetype_source/docs/FTL.TXT" "$runtime/share/licenses/freetype/FTL.TXT"
 printf 'This software uses parts of the FreeType Project (https://www.freetype.org). All rights reserved.\n' \
@@ -102,5 +104,5 @@ done
 cp "$root/docs/bundled-wine.md" "$runtime/share/licenses/wine/WinBridge.md"
 
 # Check the selected native libraries only resolve against macOS or the bundle.
-python3 "$root/scripts/audit-wine-runtime.py" "$runtime"
+python3 "$root/scripts/audit-wine-runtime.py" "$runtime" "$freetype_build_id" "$embedded_freetype"
 tar -czf "$output/WinBridge-Wine-runtime.tar.gz" -C "$runtime" bin lib share
