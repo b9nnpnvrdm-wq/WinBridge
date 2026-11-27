@@ -104,8 +104,63 @@ jobs:
             echo "::error::Wine hit the font or debugger crash during Steam startup"
             exit 1
           fi
-          if pgrep -fi 'steam\.exe|steamwebhelper\.exe'; then
-            echo 'A Steam process remains active. The sign-in window was not checked.'
+          if pids=$(pgrep -fi 'steam\.exe|steamwebhelper\.exe'); then
+            echo 'A Steam process remains active.'
+            # Probe the test account's Steam windows without signing in.
+            printf '%s\n' "$pids" | xcrun swift -e '
+              import AppKit
+              import CoreGraphics
+              import Foundation
+
+              var pids: Set<Int32> = []
+              while let line = readLine() {
+                  if let pid = Int32(line) { pids.insert(pid) }
+              }
+              let windows = CGWindowListCopyWindowInfo(
+                  [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+              ) as? [[String: Any]] ?? []
+              let candidates = windows.compactMap { window -> (Int, CGFloat)? in
+                  guard let pid = window[kCGWindowOwnerPID as String] as? Int32, pids.contains(pid),
+                        let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
+                        let id = window[kCGWindowNumber as String] as? Int,
+                        let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                        let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                        rect.width >= 180, rect.height >= 120 else { return nil }
+                  return (id, rect.width * rect.height)
+              }
+              guard let window = candidates.max(by: { $0.1 < $1.1 }) else {
+                  print("No on-screen Steam window detected on this runner.")
+                  exit(0)
+              }
+              print("On-screen Steam window detected.")
+              let url = FileManager.default.temporaryDirectory
+                  .appendingPathComponent(UUID().uuidString).appendingPathExtension("png")
+              defer { try? FileManager.default.removeItem(at: url) }
+              let capture = Process()
+              capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+              capture.arguments = ["-x", "-o", "-l", String(window.0), url.path]
+              try capture.run()
+              capture.waitUntilExit()
+              guard capture.terminationStatus == 0, let bytes = try? Data(contentsOf: url),
+                    let image = NSBitmapImageRep(data: bytes) else {
+                  print("Steam window pixels could not be read on this runner.")
+                  exit(0)
+              }
+              var sampled = 0
+              var nearBlack = 0
+              for y in stride(from: image.pixelsHigh / 5, to: image.pixelsHigh * 4 / 5, by: 12) {
+                  for x in stride(from: image.pixelsWide / 10, to: image.pixelsWide * 9 / 10, by: 12) {
+                      guard let color = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                      sampled += 1
+                      if max(color.redComponent, color.greenComponent, color.blueComponent) < 0.035 {
+                          nearBlack += 1
+                      }
+                  }
+              }
+              if sampled > 0 {
+                  print("Steam window near-black interior samples: \(nearBlack)/\(sampled)")
+              }
+            ' || echo 'The optional Steam window probe was unavailable.'
           else
             echo "::error::Steam processes exited after bootstrap"
             exit 1
