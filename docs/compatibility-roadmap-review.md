@@ -12,7 +12,7 @@ upstream engine change or a compatible implementation of the missing API.
 
 | Original requirement | Current preview | Next engineering gate |
 |---|---|---|
-| Core Engine | Pinned Wine 11.0, Rosetta and new WoW64, PE preflight, explicit process arguments, per-action logs | Versioned runtime capabilities and reproducible builds with Wine TLS, font and media support |
+| Core Engine | Pinned Wine 11.0, Rosetta and new WoW64, PE preflight, explicit process arguments, per-action logs | Versioned runtime capabilities and reproducible builds with Wine TLS and media support |
 | Application Manager | Native catalog with separate prefixes, EXE run and installer routing, MSI install/uninstall, per-profile DLL imports | Installed EXE discovery and registry-backed uninstall entries, dependency recipes, interrupted-install recovery |
 | Gaming Engine | Steam workflow, Metal HUD opt-in and frame-time analysis | Validate DXMT and DXVK with their exact Darwin prerequisites, add shader cache and controller/fullscreen checks, then qualify GTA V Legacy |
 | Storage Manager | Separate generated prefix per app under a selectable storage folder, separate Steam prefix | External SSD identity across mounts, reclaimable cache reporting, safe migration |
@@ -40,9 +40,9 @@ upstream engine change or a compatible implementation of the missing API.
 
 ## Extending compatibility
 
-- **Dependencies first.** The baseline omits GnuTLS, FreeType, GStreamer and
-  Vulkan. Add these through reproducible, relocatable builds with corresponding
-  source and notices. Verify Windows HTTPS, font rendering, media and
+- **Dependencies first.** The engine now builds and tests FreeType. It still
+  omits GnuTLS, GStreamer and Vulkan. Add these through reproducible, relocatable
+  builds with corresponding source and notices. Verify Windows HTTPS, media and
   application installers independently before selecting them as defaults.
 - **Graphics next.** DXMT needs the matching Wine macOS driver interfaces.
   DXVK and VKD3D-Proton need their host Vulkan profiles checked against

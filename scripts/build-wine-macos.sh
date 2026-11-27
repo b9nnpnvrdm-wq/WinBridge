@@ -61,10 +61,12 @@ freetype_install="$work/freetype-install"
   make install
 )
 freetype_dylib="$freetype_install/lib/libfreetype.6.dylib"
-# Wine records the install name discovered when probing the dylib in configure.
-# Resolve it beside win32u.so when the end user starts Wine from WinBridge.app.
+# Wine's macOS configure probe normally strips the directory from the install
+# name. Keep a relocatable path because this dependency lives beside win32u.so,
+# outside the user's system library search paths.
 install_name_tool -id '@loader_path/libfreetype.6.dylib' "$freetype_dylib"
 export PKG_CONFIG_PATH="$freetype_install/lib/pkgconfig"
+export ac_cv_lib_soname_freetype='@loader_path/libfreetype.6.dylib'
 (
   cd "$work/build"
   if ! "$work/wine-source/configure" --prefix=/winbridge-wine \
