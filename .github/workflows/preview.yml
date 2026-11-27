@@ -1,0 +1,97 @@
+name: macOS preview and download page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'macOS/**'
+      - 'pages/**'
+      - 'scripts/package-macos.sh'
+      - '.github/workflows/preview.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: winbridge-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test Apple Silicon app
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: xcodebuild -version
+      - run: xcrun swift test --package-path macOS --arch arm64
+      - run: ./scripts/package-macos.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: winbridge-macos
+          path: |
+            dist/WinBridge-arm64.zip
+            dist/WinBridge-arm64.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish preview ZIP
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: winbridge-macos
+          path: dist
+      - name: Create prerelease for this build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha256sum --check WinBridge-arm64.zip.sha256
+          tag="preview-${GITHUB_SHA:0:12}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "This revision already has a preview release."
+            exit 0
+          fi
+          gh release create "$tag" WinBridge-arm64.zip WinBridge-arm64.zip.sha256 \
+            --target "$GITHUB_SHA" --prerelease --title "WinBridge macOS preview (${GITHUB_SHA:0:12})" \
+            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Requires a separately supplied Wine build. GTA V compatibility remains unverified."
+        working-directory: dist
+
+  pages:
+    name: Deploy GitHub Pages download
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/configure-pages@v5
+      - uses: actions/download-artifact@v8
+        with:
+          name: winbridge-macos
+          path: pages
+      - name: Verify the download files
+        working-directory: pages
+        run: sha256sum --check WinBridge-arm64.zip.sha256
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+      - uses: actions/deploy-pages@v4
+        id: deployment

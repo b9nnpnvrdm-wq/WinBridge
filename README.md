@@ -2,6 +2,18 @@
 
 WinBridge is an Apple Silicon-first project for running Windows applications and games on macOS using Wine and graphics translation. The repository contains development diagnostics, the technical design, and an experimental Windows Steam launcher that uses a supplied Wine runtime. Steam gameplay on macOS remains unverified.
 
+## Open the Mac app
+
+WinBridge has a native graphical preview for Apple Silicon and macOS 14 or
+later. Download the macOS preview ZIP from [GitHub Releases](https://github.com/b9nnpnvrdm-wq/WinBridge/releases),
+unzip it, and double-click `WinBridge.app`. The app walks you through choosing
+a Wine engine, installing Windows Steam, and requesting a game by App ID.
+A separate macOS Wine build is required. The app does not require Python.
+
+The preview is ad hoc signed. Developer ID signing and Apple notarization
+are pending. See [macOS packaging and download publishing](docs/macos-preview.md)
+for the build and GitHub Pages setup.
+
 ## Run the development diagnostics
 
 From the repository root on Linux or macOS with Python 3.10 or later:
