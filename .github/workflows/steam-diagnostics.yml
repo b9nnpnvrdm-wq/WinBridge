@@ -102,7 +102,8 @@ jobs:
           # environment so the compatibility flags are used on the next launch.
           "$runtime/wineserver" -k || true
           "$runtime/wineserver" -w
-          "$runtime/wine" "$client" -cef-disable-gpu -cef-disable-gpu-compositing >steam.log 2>&1 &
+          WINEDEBUG="$WINEDEBUG,+seh,+loaddll" \
+            "$runtime/wine" "$client" -cef-disable-gpu -cef-disable-gpu-compositing >steam.log 2>&1 &
           # A fresh install can apply both the bootstrap and the 64-bit client
           # update before it starts the process that draws the sign-in window.
           helper_started=false
@@ -129,6 +130,18 @@ jobs:
             exit 1
           fi
           if [[ "$helper_started" != true ]]; then
+            fault=$(grep -m1 -E 'Unhandled page fault|Unhandled exception' steam.log || true)
+            if [[ -n "$fault" ]]; then
+              echo "::group::Steam process fault"
+              printf '%s\n' "$fault"
+              thread=$(sed -nE 's/.*\(thread ([[:xdigit:]]+)\).*/\1/p' <<< "$fault")
+              if [[ -n "$thread" ]]; then
+                grep -iE "(^|:)$thread:.*(trace:seh:|trace:loaddll:|err:)" steam.log | tail -60 || true
+              fi
+              echo 'Recent loaded modules:'
+              grep 'trace:loaddll:' steam.log | tail -65 || true
+              echo '::endgroup::'
+            fi
             echo "::error::Steam did not reach its web helper during the probe window"
             exit 1
           fi
