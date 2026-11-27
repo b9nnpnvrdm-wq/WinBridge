@@ -30,11 +30,14 @@ tar -xf "$work/toolchain.tar.xz" -C "$work"
 
 # Keep this baseline independent of Homebrew/MacPorts runtime libraries.
 export MACOSX_DEPLOYMENT_TARGET=14.0
-export PATH="$work/$toolchain/bin:$(brew --prefix bison)/bin:$PATH"
-export CC="$(xcrun --find clang)"
+export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+export CC="$(xcrun --sdk macosx --find clang)"
+export PATH="$(dirname "$CC"):$(brew --prefix bison)/bin:$PATH:$work/$toolchain/bin"
+printf 'int main(void) { return 0; }\n' | "$CC" -x c - -o "$work/native-probe"
+"$work/native-probe"
 (
   cd "$work/build"
-  "$work/wine-source/configure" --prefix=/winbridge-wine \
+  if ! "$work/wine-source/configure" --prefix=/winbridge-wine \
     --enable-archs=i386,x86_64 --with-mingw="$work/$toolchain/bin/clang" \
     --disable-tests --disable-winebth_sys --with-coreaudio --without-x --without-wayland \
     --without-alsa --without-capi --without-cups --without-dbus --without-ffmpeg \
@@ -42,7 +45,10 @@ export CC="$(xcrun --find clang)"
     --without-gnutls --without-gssapi --without-gstreamer --without-hwloc --without-inotify \
     --without-krb5 --without-netapi --without-opencl --without-oss --without-pcap \
     --without-pcsclite --without-pulse --without-sane --without-sdl --without-udev \
-    --without-usb --without-v4l2 --without-vulkan
+    --without-usb --without-v4l2 --without-vulkan; then
+    grep -E 'error:|clang:|ld:|SDKROOT' config.log | tail -60 || true
+    exit 1
+  fi
   make -j"$(sysctl -n hw.ncpu)"
   make install DESTDIR="$work/install"
 )

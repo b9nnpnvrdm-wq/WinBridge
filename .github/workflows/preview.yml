@@ -38,17 +38,26 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  build:
-    name: Build and test Apple Silicon app
+  swift-tests:
+    name: Test the Apple Silicon launcher and updater build
     runs-on: macos-15
-    needs: wine
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - run: xcodebuild -version
       - run: xcrun swift test --package-path macOS --arch arm64
+
+  build:
+    name: Build and test Apple Silicon app
+    runs-on: macos-15
+    needs: [wine, swift-tests]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: winbridge-wine
