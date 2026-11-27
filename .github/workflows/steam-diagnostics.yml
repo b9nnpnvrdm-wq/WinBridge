@@ -13,6 +13,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -24,21 +25,27 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Download the tested WinBridge build
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v8
+        with:
+          name: winbridge-macos
+          path: ${{ runner.temp }}/steam-smoke
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
       - name: Download WinBridge and the Windows Steam installer
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           PREVIEW: ${{ inputs.preview }}
-          PREVIEW_COMMIT: ${{ github.event.workflow_run.head_sha }}
         run: |
           directory="$RUNNER_TEMP/steam-smoke"
-          mkdir "$directory"
+          mkdir -p "$directory"
           cd "$directory"
-          if [[ -n "$PREVIEW_COMMIT" ]]; then
-            PREVIEW="preview-${PREVIEW_COMMIT:0:12}"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$PREVIEW" =~ ^preview-[a-f0-9]{12}$ ]]
+            gh release download "$PREVIEW" --pattern 'WinBridge-arm64.zip*'
           fi
-          [[ "$PREVIEW" =~ ^preview-[a-f0-9]{12}$ ]]
-          gh release download "$PREVIEW" --pattern 'WinBridge-arm64.zip*'
           shasum -a 256 -c WinBridge-arm64.zip.sha256
           ditto -x -k WinBridge-arm64.zip .
           curl --fail --location --retry 2 --silent --show-error \

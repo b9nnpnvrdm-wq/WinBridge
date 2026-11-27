@@ -128,7 +128,7 @@ private struct SetupView: View {
                     Toggle("Use software rendering for the Steam interface", isOn: $steamSoftwareRendering)
                     HStack {
                         Button("Quit Steam") { quitSteam() }
-                            .disabled(launcher.isRunning(prefix) || resolvedSteam == nil)
+                            .disabled(!launcher.canQuitSteam(prefix) || resolvedSteam == nil)
                         if let logs = steamLogs {
                             Button("Open Steam Logs") { NSWorkspace.shared.open(logs) }
                         }
@@ -188,7 +188,8 @@ private struct SetupView: View {
         launcher.start(
             runningMessage: installing ? "Running Steam Setup…" : "Opening Steam…",
             completionMessage: installing ? "Steam Setup exited. Open Steam to continue." :
-                "The Steam launch command exited. Open Steam Logs to check its startup."
+                "The Steam launch command exited. Open Steam Logs to check its startup.",
+            kind: installing ? .standard : .steamClient
         ) {
             try SteamCommand.make(
                 wine: preferences.engine ?? "",
@@ -203,7 +204,8 @@ private struct SetupView: View {
         guard let client = resolvedSteam else { return }
         launcher.start(
             runningMessage: "Asking Steam to quit…",
-            completionMessage: "The Steam quit command finished. Reopen Steam after it closes."
+            completionMessage: "The Steam quit command finished. Reopen Steam after it closes.",
+            kind: .steamShutdown
         ) {
             try SteamCommand.quit(wine: preferences.engine ?? "", prefix: prefix, client: client)
         }
@@ -259,12 +261,29 @@ struct LauncherStatus: View {
 
 @MainActor
 final class Launcher: ObservableObject {
+    enum CommandKind: Hashable {
+        case standard, steamClient, steamShutdown
+    }
+
+    private struct CommandKey: Hashable {
+        let prefix: String
+        let kind: CommandKind
+    }
+
     @Published private(set) var status = "Choose an application to begin."
     @Published private(set) var log: URL?
-    @Published private var active: [String: Process] = [:]
+    @Published private var active: [CommandKey: Process] = [:]
     var running: Bool { !active.isEmpty }
 
-    func isRunning(_ prefix: String) -> Bool { active[normalized(prefix)] != nil }
+    func isRunning(_ prefix: String) -> Bool {
+        let path = normalized(prefix)
+        return active.keys.contains { $0.prefix == path }
+    }
+
+    func canQuitSteam(_ prefix: String) -> Bool {
+        let path = normalized(prefix)
+        return !active.keys.contains { $0.prefix == path && $0.kind != .steamClient }
+    }
 
     private func normalized(_ path: String) -> String {
         URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
@@ -274,12 +293,15 @@ final class Launcher: ObservableObject {
     func report(_ error: Error) { status = error.localizedDescription }
 
     func start(
-        runningMessage: String, completionMessage: String, command: () throws -> WineInvocation
+        runningMessage: String, completionMessage: String,
+        kind: CommandKind = .standard, command: () throws -> WineInvocation
     ) {
         do {
             let invocation = try command()
             let prefix = normalized(invocation.environment["WINEPREFIX"] ?? "")
-            guard active[prefix] == nil else {
+            let key = CommandKey(prefix: prefix, kind: kind)
+            let canStart = kind == .steamShutdown ? canQuitSteam(prefix) : !isRunning(prefix)
+            guard canStart else {
                 status = "A Windows command is already running in this environment."
                 return
             }
@@ -303,7 +325,8 @@ final class Launcher: ObservableObject {
                 let terminated = result.terminationReason == .uncaughtSignal
                 Task { @MainActor in
                     guard let self else { return }
-                    self.active.removeValue(forKey: prefix)
+                    self.active.removeValue(forKey: key)
+                    if kind == .steamClient && !self.canQuitSteam(prefix) { return }
                     if terminated {
                         self.status = "WinBridge detected a process stop (signal \(code)). Open the log for details."
                     } else if code != 0 {
@@ -316,7 +339,7 @@ final class Launcher: ObservableObject {
             }
             log = url
             try child.run()
-            active[prefix] = child
+            active[key] = child
             status = runningMessage
         } catch {
             let failure = error as NSError
