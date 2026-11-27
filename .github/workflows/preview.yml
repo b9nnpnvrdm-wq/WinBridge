@@ -6,7 +6,8 @@ on:
     paths:
       - 'macOS/**'
       - 'pages/**'
-      - 'scripts/package-macos.sh'
+      - 'scripts/**'
+      - 'docs/bundled-wine.md'
       - '.github/workflows/preview.yml'
   workflow_dispatch:
 
@@ -18,9 +19,29 @@ permissions:
   contents: read
 
 jobs:
+  wine:
+    name: Build Wine 11.0 for x86-64 macOS
+    runs-on: macos-15-intel
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: brew list --versions bison || brew install bison
+      - run: ./scripts/build-wine-macos.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: winbridge-wine
+          path: |
+            dist/WinBridge-Wine-runtime.tar.gz
+            dist/wine-11.0-source.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
   build:
     name: Build and test Apple Silicon app
     runs-on: macos-15
+    needs: wine
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -28,13 +49,23 @@ jobs:
           persist-credentials: false
       - run: xcodebuild -version
       - run: xcrun swift test --package-path macOS --arch arm64
+      - uses: actions/download-artifact@v8
+        with:
+          name: winbridge-wine
+          path: dist
       - run: ./scripts/package-macos.sh
+        env:
+          WINBRIDGE_UPDATE_FEED_URL: ${{ vars.WINBRIDGE_UPDATE_FEED_URL }}
+          WINBRIDGE_UPDATE_PUBLIC_KEY: ${{ vars.WINBRIDGE_UPDATE_PUBLIC_KEY }}
+      - name: Smoke test bundled Wine under Rosetta
+        run: ./scripts/smoke-test-wine-macos.sh dist/WinBridge.app
       - uses: actions/upload-artifact@v7
         with:
           name: winbridge-macos
           path: |
             dist/WinBridge-arm64.zip
             dist/WinBridge-arm64.zip.sha256
+            dist/wine-11.0-source.tar.gz
           if-no-files-found: error
           compression-level: 0
 
@@ -61,9 +92,9 @@ jobs:
             echo "This revision already has a preview release."
             exit 0
           fi
-          gh release create "$tag" WinBridge-arm64.zip WinBridge-arm64.zip.sha256 \
+          gh release create "$tag" WinBridge-arm64.zip WinBridge-arm64.zip.sha256 wine-11.0-source.tar.gz \
             --target "$GITHUB_SHA" --prerelease --title "WinBridge macOS preview (${GITHUB_SHA:0:12})" \
-            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Requires a separately supplied Wine build. GTA V compatibility remains unverified."
+            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Includes a baseline Wine 11.0 runtime and its exact source. Requires Rosetta. GTA V compatibility remains unverified."
         working-directory: dist
 
   pages:

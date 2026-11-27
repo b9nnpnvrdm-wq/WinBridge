@@ -1,19 +1,64 @@
 import AppKit
+import Sparkle
 import SwiftUI
 import WinBridgeCore
 
 @main
+@MainActor
 struct WinBridgeApp: App {
+    private let updates = AppUpdates()
+
     var body: some Scene {
         WindowGroup("WinBridge") {
             SetupView()
                 .frame(minWidth: 640, idealWidth: 720, minHeight: 540, idealHeight: 760)
+                .task { updates.start() }
+        }
+        .commands {
+            CommandGroup(after: .appInfo) {
+                if let controller = updates.controller {
+                    Button("Check for Updates…") { controller.checkForUpdates(nil) }
+                } else {
+                    Link("View WinBridge Releases…", destination: AppUpdates.releases)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+private final class AppUpdates {
+    static let releases = URL(string: "https://github.com/b9nnpnvrdm-wq/WinBridge/releases")!
+    let controller: SPUStandardUpdaterController?
+    private var started = false
+
+    init() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        if let key = info["SUPublicEDKey"] as? String,
+           Data(base64Encoded: key)?.count == 32,
+           let feed = info["SUFeedURL"] as? String,
+           let url = URL(string: feed), url.scheme == "https", url.host != nil {
+            controller = SPUStandardUpdaterController(
+                startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil
+            )
+        } else {
+            controller = nil
+        }
+    }
+
+    func start() {
+        guard !started, let controller else { return }
+        started = true
+        controller.startUpdater()
+        if controller.updater.automaticallyChecksForUpdates {
+            controller.updater.checkForUpdatesInBackground()
         }
     }
 }
 
 private struct SetupView: View {
     @AppStorage("wine") private var wine = ""
+    @AppStorage("useBundledWine") private var useBundledWine = true
     @AppStorage("prefix") private var prefix = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/WinBridge/Steam").path
     @AppStorage("steamClient") private var steamClient = ""
@@ -38,8 +83,17 @@ private struct SetupView: View {
                     }
                 }
                 step("Choose a Wine engine", icon: "gearshape.2") {
-                    Text("Install a trusted Wine build for macOS, then select its wine launcher file. Wine is supplied separately.")
-                    pathField("Wine executable", value: $wine)
+                    if bundledWine != nil {
+                        Toggle("Use built-in Wine 11.0", isOn: $useBundledWine)
+                        if useBundledWine {
+                            Text("The built-in engine requires Rosetta. Steam and game compatibility with this baseline engine is still being tested.")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    if !useBundledWine || bundledWine == nil {
+                        Text("Choose the launcher file from a trusted Wine build for macOS.")
+                        pathField("Wine executable", value: $wine)
+                    }
                     pathField("Steam environment", value: $prefix, directory: true)
                     Text("The default environment is created when you run Steam Setup.")
                         .font(.callout).foregroundStyle(.secondary)
@@ -87,6 +141,13 @@ private struct SetupView: View {
         .onChange(of: prefix) { _, _ in steamClient = "" }
     }
 
+    private var bundledWine: String? {
+        guard let url = Bundle.main.sharedSupportURL?
+            .appendingPathComponent("Wine/bin/wine"),
+              FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
+        return url.path
+    }
+
     private var suggestedClient: String? {
         let base = URL(fileURLWithPath: NSString(string: prefix).expandingTildeInPath)
             .appendingPathComponent("drive_c")
@@ -102,7 +163,8 @@ private struct SetupView: View {
         let program = executable.isEmpty ? (suggestedClient ?? "") : executable
         if !installing && steamClient.isEmpty { steamClient = program }
         launcher.start(
-            wine: wine, prefix: prefix, executable: program, installing: installing,
+            wine: (useBundledWine ? bundledWine : nil) ?? wine,
+            prefix: prefix, executable: program, installing: installing,
             appID: appID, metalHUD: !installing && metalHUD
         )
     }
@@ -139,7 +201,7 @@ private struct SetupView: View {
 
 @MainActor
 private final class Launcher: ObservableObject {
-    @Published private(set) var status = "Choose a Wine engine to begin."
+    @Published private(set) var status = "Choose a Windows Steam installer to begin."
     @Published private(set) var running = false
     @Published private(set) var log: URL?
     private var process: Process?
@@ -196,7 +258,12 @@ private final class Launcher: ObservableObject {
             running = true
             status = installing ? "Steam Setup is running…" : "Wine is running…"
         } catch {
-            status = error.localizedDescription
+            let failure = error as NSError
+            if failure.domain == NSPOSIXErrorDomain && failure.code == 86 {
+                status = "Wine could not run for this CPU. The built-in engine requires Rosetta."
+            } else {
+                status = error.localizedDescription
+            }
         }
     }
 }
