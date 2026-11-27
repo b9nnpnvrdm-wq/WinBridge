@@ -1,12 +1,14 @@
 name: Diagnose Windows Steam bootstrap on macOS
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/steam-diagnostics.yml']
   workflow_dispatch:
     inputs:
       preview:
-        description: WinBridge preview release tag to test
-        required: true
-        default: preview-ead753855639
+        description: WinBridge preview tag (leave empty to test the newest preview)
+        required: false
   workflow_run:
     workflows: [macOS preview and download page]
     types: [completed]
@@ -20,7 +22,7 @@ jobs:
   steam-bootstrap:
     name: Run Steam without signing in
     runs-on: macos-15
-    timeout-minutes: 9
+    timeout-minutes: 10
     defaults:
       run:
         shell: bash
@@ -42,8 +44,13 @@ jobs:
           directory="$RUNNER_TEMP/steam-smoke"
           mkdir -p "$directory"
           cd "$directory"
-          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+          if [[ "$GITHUB_EVENT_NAME" != workflow_run ]]; then
+            if [[ -z "$PREVIEW" ]]; then
+              PREVIEW=$(gh release list --limit 20 --json tagName,isDraft,isPrerelease \
+                --jq '[.[] | select(.isPrerelease and (.isDraft | not) and (.tagName | test("^preview-[a-f0-9]{12}$")))] | .[0].tagName // empty')
+            fi
             [[ "$PREVIEW" =~ ^preview-[a-f0-9]{12}$ ]]
+            echo "Testing WinBridge $PREVIEW."
             gh release download "$PREVIEW" --pattern 'WinBridge-arm64.zip*'
           fi
           shasum -a 256 -c WinBridge-arm64.zip.sha256
@@ -51,7 +58,7 @@ jobs:
           curl --fail --location --retry 2 --silent --show-error \
             https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe -o SteamSetup.exe
       - name: Install Steam and inspect startup
-        timeout-minutes: 6
+        timeout-minutes: 8
         run: |
           directory="$RUNNER_TEMP/steam-smoke"
           cd "$directory"
@@ -96,7 +103,17 @@ jobs:
           "$runtime/wineserver" -k || true
           "$runtime/wineserver" -w
           "$runtime/wine" "$client" -cef-disable-gpu -cef-disable-gpu-compositing >steam.log 2>&1 &
-          sleep 120
+          # A fresh install can apply both the bootstrap and the 64-bit client
+          # update before it starts the process that draws the sign-in window.
+          helper_started=false
+          for attempt in {1..54}; do
+            if pgrep -fi 'steamwebhelper\.exe' >/dev/null; then
+              helper_started=true
+              sleep 12
+              break
+            fi
+            sleep 4
+          done
           tail -65 steam.log
           logs="$(dirname "$client")/logs"
           for name in bootstrap_log.txt cef_log.txt webhelper.txt; do
@@ -111,6 +128,11 @@ jobs:
             echo "::error::Wine hit the font or debugger crash during Steam startup"
             exit 1
           fi
+          if [[ "$helper_started" != true ]]; then
+            echo "::error::Steam did not reach its web helper during the probe window"
+            exit 1
+          fi
+          echo 'Steam started its web helper.'
           if pids=$(pgrep -fi 'steam\.exe|steamwebhelper\.exe'); then
             echo 'A Steam process remains active.'
             # Probe the test account's Steam windows without signing in.
