@@ -16,7 +16,7 @@ bin=$(xcrun swift build --package-path "$root/macOS" --configuration release --a
 install -m 755 "$bin/WinBridge" "$app/Contents/MacOS/WinBridge"
 install -m 644 "$root/macOS/Info.plist" "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
-xcrun lipo -verify_arch arm64 "$app/Contents/MacOS/WinBridge"
+xcrun lipo "$app/Contents/MacOS/WinBridge" -verify_arch arm64
 
 # Apple Silicon requires a valid code signature. This preview uses ad hoc signing.
 codesign --force --sign - "$app"
