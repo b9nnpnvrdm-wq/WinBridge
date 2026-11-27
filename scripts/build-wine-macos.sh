@@ -20,7 +20,11 @@ git -C "$work/wine-source" init --quiet
 git -C "$work/wine-source" fetch --quiet --depth=1 https://github.com/wine-mirror/wine.git "$wine_commit"
 git -C "$work/wine-source" checkout --quiet --detach FETCH_HEAD
 [[ $(git -C "$work/wine-source" rev-parse HEAD) == "$wine_commit" ]]
-git -C "$work/wine-source" archive --format=tar --prefix=wine-11.0/ HEAD \
+# Archive the exact patched source tree used for compilation.
+git -C "$work/wine-source" apply --unidiff-zero "$root/scripts/patches/wine-idle-server.patch"
+git -C "$work/wine-source" add server/main.c
+patched_tree=$(git -C "$work/wine-source" write-tree)
+git -C "$work/wine-source" archive --format=tar --prefix=wine-11.0/ "$patched_tree" \
   | gzip -n > "$output/wine-11.0-source.tar.gz"
 curl --fail --location --retry 3 --silent --show-error \
   "https://github.com/mstorsjo/llvm-mingw/releases/download/$toolchain_version/$toolchain.tar.xz" \

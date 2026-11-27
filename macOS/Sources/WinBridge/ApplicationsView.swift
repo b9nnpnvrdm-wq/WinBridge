@@ -4,6 +4,9 @@ import WinBridgeCore
 
 struct ApplicationsView: View {
     @ObservedObject var launcher: Launcher
+    @ObservedObject var preferences: EnginePreferences
+    @ObservedObject var finderFiles: FinderFiles
+    @State private var dropping = false
     @State private var profiles: [WindowsApplication] = []
     @State private var selected: UUID?
     @State private var ready = false
@@ -20,13 +23,15 @@ struct ApplicationsView: View {
                     }
                 }
                 Button { addApplication() } label: { Label("New Windows App", systemImage: "plus") }
-                    .disabled(!ready || launcher.running)
+                    .disabled(!ready)
+                Text("Drop Windows EXEs here")
+                    .font(.caption).foregroundStyle(.secondary)
                     .padding(.bottom, 14)
             }
             .frame(minWidth: 175, idealWidth: 205, maxWidth: 255)
 
             if let profile = profiles.first(where: { $0.id == selected }) {
-                ApplicationEditor(profile: profile, launcher: launcher, save: save)
+                ApplicationEditor(profile: profile, launcher: launcher, preferences: preferences, save: save)
                     .id(profile.id)
                     .frame(minWidth: 430)
             } else {
@@ -37,16 +42,52 @@ struct ApplicationsView: View {
                 .frame(minWidth: 430, maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .onAppear {
-            guard !ready else { return }
-            do {
-                profiles = try library.load()
-                selected = profiles.first?.id
-                ready = true
-            } catch {
-                launcher.report(error)
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(.tint, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .padding(6)
+                    .allowsHitTesting(false)
             }
         }
+        .dropDestination(for: URL.self) { urls, _ in
+            register(urls, run: false)
+        } isTargeted: { dropping = $0 }
+        .onAppear {
+            do {
+                if !ready {
+                    profiles = try library.load()
+                    selected = profiles.first?.id
+                    ready = true
+                }
+                openFinderFiles()
+            } catch { launcher.report(error) }
+        }
+        .onChange(of: finderFiles.pending) { _, _ in openFinderFiles() }
+    }
+
+    private func openFinderFiles() {
+        guard ready, !finderFiles.pending.isEmpty else { return }
+        _ = register(finderFiles.take(), run: true)
+    }
+
+    private func register(_ urls: [URL], run: Bool) -> Bool {
+        guard ready else { return false }
+        var accepted = false
+        for url in urls {
+            do {
+                let profile = try library.profile(forExecutable: url, in: profiles)
+                if !profiles.contains(where: { $0.id == profile.id }) { try save(profile) }
+                selected = profile.id
+                accepted = true
+                if run {
+                    launcher.start(runningMessage: "Opening \(profile.name)…", completionMessage: "The Windows command exited.") {
+                        try profile.command(.run, bundledWine: preferences.engine)
+                    }
+                }
+            } catch { launcher.report(error) }
+        }
+        return accepted
     }
 
     private func addApplication() {
@@ -72,6 +113,7 @@ struct ApplicationsView: View {
 private struct ApplicationEditor: View {
     @State var profile: WindowsApplication
     @ObservedObject var launcher: Launcher
+    @ObservedObject var preferences: EnginePreferences
     let save: (WindowsApplication) throws -> Void
     @State private var fileInfo: String?
     @State private var installerInfo: String?
@@ -87,7 +129,7 @@ private struct ApplicationEditor: View {
 
                 GroupBox("Run an executable") {
                     VStack(alignment: .leading, spacing: 10) {
-                        fileField("Windows EXE", value: $profile.executable)
+                        PathField(label: "Windows EXE", value: $profile.executable)
                         if let fileInfo { Text(fileInfo).font(.callout).foregroundStyle(.secondary) }
                         Button("Run EXE") { run(.run) }
                             .buttonStyle(.borderedProminent)
@@ -97,7 +139,7 @@ private struct ApplicationEditor: View {
 
                 GroupBox("Install or uninstall") {
                     VStack(alignment: .leading, spacing: 10) {
-                        fileField("EXE or MSI installer", value: $profile.installer)
+                        PathField(label: "EXE or MSI installer", value: $profile.installer)
                         if let installerInfo { Text(installerInfo).font(.callout).foregroundStyle(.secondary) }
                         HStack {
                             Button("Run Installer") { run(.install) }.disabled(profile.installer.isEmpty)
@@ -113,9 +155,9 @@ private struct ApplicationEditor: View {
                 GroupBox("Compatibility and storage") {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Each profile has its own Windows files and registry.")
-                        fileField("Environment storage folder", value: $profile.location, directory: true)
+                        PathField(label: "Environment storage folder", value: $profile.location, directory: true)
                             .disabled(profile.isInitialized)
-                        fileField("Wine executable (optional)", value: $profile.wine)
+                        PathField(label: "Override the default Wine executable", value: $profile.wine)
                         Toggle("Show Metal Performance HUD", isOn: $profile.metalHUD)
                         HStack {
                             Button("Initialize Environment") { run(.initialize) }.disabled(profile.isInitialized)
@@ -134,7 +176,7 @@ private struct ApplicationEditor: View {
             }
             .padding(24)
         }
-        .disabled(launcher.running)
+        .disabled(launcher.isRunning(profile.prefix.path))
         .onAppear {
             fileInfo = inspect(profile.executable)
             installerInfo = inspect(profile.installer)
@@ -149,7 +191,7 @@ private struct ApplicationEditor: View {
     private func run(_ action: WindowsApplication.Action) {
         do { try save(profile) } catch { launcher.report(error); return }
         launcher.start(runningMessage: "Running the Windows command…", completionMessage: "The Windows command exited successfully.") {
-            try profile.command(action, bundledWine: bundledWine)
+            try profile.command(action, bundledWine: preferences.engine)
         }
     }
 
@@ -173,19 +215,4 @@ private struct ApplicationEditor: View {
         }
     }
 
-    private func fileField(_ label: String, value: Binding<String>, directory: Bool = false) -> some View {
-        HStack {
-            TextField(label, text: value).textFieldStyle(.roundedBorder)
-            Button("Choose…") {
-                let panel = NSOpenPanel()
-                panel.title = label
-                panel.canChooseFiles = !directory
-                panel.canChooseDirectories = directory
-                panel.canCreateDirectories = directory
-                panel.treatsFilePackagesAsDirectories = !directory
-                if panel.runModal() == .OK, let url = panel.url { value.wrappedValue = url.path }
-            }
-            .accessibilityLabel("Choose \(label)")
-        }
-    }
 }

@@ -1,10 +1,16 @@
 # Bundled Wine engine
 
-WinBridge builds the unmodified [Wine 11.0 source revision](https://github.com/wine-mirror/wine/tree/db11d0fe6a169c457e23d007e20404643d067aa8)
+WinBridge builds [Wine 11.0 from source](https://github.com/wine-mirror/wine/tree/db11d0fe6a169c457e23d007e20404643d067aa8)
 for x86-64 macOS with new WoW64 and includes the installed runtime under
 `WinBridge.app/Contents/SharedSupport/Wine`. WinBridge itself is native
 arm64. The bundled x86-64 engine requires Apple's Rosetta on Apple Silicon.
 An external, separately supplied engine can still be selected in the app.
+
+The WinBridge build [patches wineserver's default idle timeout](https://github.com/b9nnpnvrdm-wq/WinBridge/blob/main/scripts/patches/wine-idle-server.patch)
+from three seconds to 45 seconds. Reopening the same environment soon after a
+Windows process exits can reuse the wineserver state. A fresh environment
+still has to initialize its Windows files and registry. The published
+corresponding source archive includes this change.
 
 The [build recipe](https://github.com/b9nnpnvrdm-wq/WinBridge/blob/main/scripts/build-wine-macos.sh)
 uses Xcode and a pinned LLVM-MinGW toolchain. Wine is licensed under

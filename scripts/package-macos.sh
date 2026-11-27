@@ -20,7 +20,15 @@ temporary=$(mktemp -d "$output/.package.XXXXXX")
 trap 'rm -r -- "$temporary"' EXIT
 staged_app="$temporary/WinBridge.app"
 shared="$staged_app/Contents/SharedSupport"
-mkdir -p "$staged_app/Contents/MacOS" "$staged_app/Contents/Frameworks" "$shared/Wine"
+mkdir -p "$staged_app/Contents/MacOS" "$staged_app/Contents/Frameworks" "$staged_app/Contents/Resources" "$shared/Wine"
+iconset="$temporary/WinBridge.iconset"
+mkdir "$iconset"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$root/macOS/Assets/WinBridge.png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+  double=$((size * 2))
+  sips -z "$double" "$double" "$root/macOS/Assets/WinBridge.png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$iconset" -o "$staged_app/Contents/Resources/WinBridge.icns"
 
 xcrun swift build --package-path "$root/macOS" --configuration release --arch arm64
 bin=$(xcrun swift build --package-path "$root/macOS" --configuration release --arch arm64 --show-bin-path)

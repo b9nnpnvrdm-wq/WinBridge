@@ -6,7 +6,11 @@ WinBridge is an Apple Silicon-first project for running Windows applications and
 
 WinBridge has a native graphical preview for Apple Silicon and macOS 14 or
 later. Download the macOS preview ZIP from [GitHub Releases](https://github.com/b9nnpnvrdm-wq/WinBridge/releases),
-unzip it, and double-click `WinBridge.app`. The **Windows Apps** tab runs Windows EXEs,
+unzip it, and double-click `WinBridge.app`. First-run setup asks which Wine
+engine to use. Change it later in **WinBridge → Settings** (⌘,). In Finder,
+Control-click an EXE and choose **Open With → WinBridge** to open it and save
+it to the library. Drag EXEs onto **Windows Apps** to add them for later.
+The **Windows Apps** tab runs Windows EXEs,
 installs through EXE or MSI, and uninstalls MSI packages. Create a separate
 profile for each app to keep its Windows files and registry isolated. The
 **Steam** tab guides you through Steam Setup and launching by App ID. Windows

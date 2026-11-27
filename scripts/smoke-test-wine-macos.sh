@@ -19,6 +19,32 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$wine" --version | grep -Fx 'wine-11.0'
-"$wine" 'C:\windows\system32\cmd.exe' /d /c 'echo WINBRIDGE_X64_OK' | tr -d '\r' | grep -Fx WINBRIDGE_X64_OK
-"$wine" 'C:\windows\syswow64\cmd.exe' /d /c 'echo WINBRIDGE_X86_OK' | tr -d '\r' | grep -Fx WINBRIDGE_X86_OK
+python3 - "$wine" <<'PYTHON'
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+wine = sys.argv[1]
+server = Path(wine).with_name("wineserver")
+assert subprocess.check_output([wine, "--version"], text=True).strip() == "wine-11.0"
+
+def run_command(path, marker):
+    start = time.monotonic()
+    output = subprocess.check_output([wine, path, "/d", "/c", f"echo {marker}"], text=True)
+    assert output.strip() == marker, output
+    elapsed = time.monotonic() - start
+    print(f"{marker} ({elapsed:.2f} s)", flush=True)
+
+run_command(r"C:\windows\system32\cmd.exe", "WINBRIDGE_X64_FRESH_PREFIX")
+watcher = subprocess.Popen([server, "-w"])
+try:
+    time.sleep(6)
+    assert watcher.poll() is None, "Wine server exited during the idle launch window"
+    run_command(r"C:\windows\system32\cmd.exe", "WINBRIDGE_X64_WARM_PREFIX")
+    run_command(r"C:\windows\syswow64\cmd.exe", "WINBRIDGE_X86_WARM_PREFIX")
+finally:
+    if watcher.poll() is None:
+        watcher.terminate()
+    watcher.wait()
+PYTHON

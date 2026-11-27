@@ -1,0 +1,6 @@
+diff --git a/server/main.c b/server/main.c
+--- a/server/main.c
++++ b/server/main.c
+@@ -47 +47 @@
+-timeout_t master_socket_timeout = 3 * -TICKS_PER_SEC;  /* master socket timeout, default is 3 seconds */
++timeout_t master_socket_timeout = 45 * -TICKS_PER_SEC; /* Keep Wine state warm for subsequent WinBridge launches. */

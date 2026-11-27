@@ -16,6 +16,19 @@ final class WindowsApplicationTests: XCTestCase {
         XCTAssertNotEqual(first.prefix, second.prefix)
     }
 
+    func testRegisteringPreviouslyOpenedExecutableReusesProfile() throws {
+        let root = try temporaryDirectory()
+        let library = ApplicationLibrary(directory: root)
+        let file = root.appendingPathComponent("Sample App.exe")
+        try image(machine: 0x8664, optionalSize: 112).write(to: file)
+        let imported = try library.profile(forExecutable: file, in: [])
+        XCTAssertEqual(imported.name, "Sample App")
+        try library.save([imported])
+        let reopened = try library.profile(forExecutable: file, in: library.load())
+        XCTAssertEqual(reopened, imported)
+        XCTAssertThrowsError(try library.profile(forExecutable: root.appendingPathComponent("fake.exe"), in: []))
+    }
+
     func testInspectArchitecturesAndRejectMalformedPE() throws {
         let root = try temporaryDirectory()
         let file = root.appendingPathComponent("app.exe")

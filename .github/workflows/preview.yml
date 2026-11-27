@@ -38,13 +38,13 @@ jobs:
           path: |
             dist/WinBridge-Wine-runtime.tar.gz
             dist/wine-11.0-source.tar.gz
-          key: winbridge-wine-macos15-x64-${{ hashFiles('scripts/build-wine-macos.sh', 'scripts/audit-wine-runtime.py', 'docs/bundled-wine.md') }}
+          key: winbridge-wine-macos15-x64-${{ hashFiles('scripts/build-wine-macos.sh', 'scripts/audit-wine-runtime.py', 'scripts/patches/**', 'docs/bundled-wine.md') }}
       - name: Match the previously verified Wine build recipe
         if: steps.wine-cache.outputs.cache-hit != 'true'
         id: baseline
         run: |
           if git diff --quiet 6747142d9284b6b7473f747d7d329616a6bc8e5e HEAD -- \
-            scripts/build-wine-macos.sh scripts/audit-wine-runtime.py docs/bundled-wine.md; then
+            scripts/build-wine-macos.sh scripts/audit-wine-runtime.py scripts/patches docs/bundled-wine.md; then
             echo "matches=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/download-artifact@v8
@@ -125,6 +125,8 @@ jobs:
           export WINBRIDGE_TEST_WINE="$PWD/dist/WinBridge.app/Contents/SharedSupport/Wine/bin/wine"
           export WINBRIDGE_TEST_FIXTURES="$PWD/dist/windows-fixtures"
           xcrun swift test --package-path macOS --arch arm64 --filter WindowsApplicationTests.testRealWindowsRuntimeFixtures
+      - name: Verify Finder Open With reaches the app library
+        run: ./scripts/smoke-test-finder-open.sh "$PWD/dist/WinBridge.app" "$PWD/dist/windows-fixtures/app/fixture.exe"
       - uses: actions/upload-artifact@v7
         with:
           name: winbridge-macos

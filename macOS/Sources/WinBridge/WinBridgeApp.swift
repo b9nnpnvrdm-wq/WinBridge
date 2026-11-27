@@ -8,14 +8,28 @@ import WinBridgeCore
 struct WinBridgeApp: App {
     private let updates = AppUpdates()
     @StateObject private var launcher = Launcher()
+    @StateObject private var preferences = EnginePreferences()
+    @NSApplicationDelegateAdaptor(FinderFiles.self) private var finderFiles
+    @State private var tab = "apps"
 
     var body: some Scene {
         Window("WinBridge", id: "main") {
-            TabView {
-                ApplicationsView(launcher: launcher)
-                    .tabItem { Label("Windows Apps", systemImage: "square.grid.2x2") }
-                SetupView(launcher: launcher)
-                    .tabItem { Label("Steam", systemImage: "gamecontroller") }
+            Group {
+                if preferences.finishedSetup {
+                    TabView(selection: $tab) {
+                        ApplicationsView(launcher: launcher, preferences: preferences, finderFiles: finderFiles)
+                            .tabItem { Label("Windows Apps", systemImage: "square.grid.2x2") }
+                            .tag("apps")
+                        SetupView(launcher: launcher, preferences: preferences)
+                            .tabItem { Label("Steam", systemImage: "gamecontroller") }
+                            .tag("steam")
+                    }
+                } else {
+                    EngineSettingsView(preferences: preferences, onboarding: true)
+                }
+            }
+            .onChange(of: finderFiles.pending) { _, files in
+                if !files.isEmpty { tab = "apps" }
             }
             .safeAreaInset(edge: .bottom) { LauncherStatus(launcher: launcher) }
             .frame(minWidth: 660, idealWidth: 820, minHeight: 560, idealHeight: 760)
@@ -30,6 +44,7 @@ struct WinBridgeApp: App {
                 }
             }
         }
+        Settings { EngineSettingsView(preferences: preferences).frame(width: 580) }
     }
 }
 
@@ -64,9 +79,6 @@ private final class AppUpdates {
 }
 
 private struct SetupView: View {
-    @AppStorage("wine") private var wine = ""
-    @AppStorage("useBundledWine") private var useBundledWine =
-        UserDefaults.standard.string(forKey: "wine")?.isEmpty ?? true
     @AppStorage("prefix") private var prefix = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/WinBridge/Steam").path
     @AppStorage("steamClient") private var steamClient = ""
@@ -74,6 +86,8 @@ private struct SetupView: View {
     @AppStorage("metalHUD") private var metalHUD = false
     @State private var installer = ""
     @ObservedObject var launcher: Launcher
+    @ObservedObject var preferences: EnginePreferences
+    @AppStorage("steamSoftwareRendering") private var steamSoftwareRendering = false
 
     var body: some View {
         ScrollView {
@@ -90,40 +104,41 @@ private struct SetupView: View {
                         Text("Windows Steam setup").foregroundStyle(.secondary)
                     }
                 }
-                step("Choose a Wine engine", icon: "gearshape.2") {
-                    if bundledWine != nil {
-                        Toggle("Use built-in Wine 11.0", isOn: $useBundledWine)
-                        if useBundledWine {
-                            Text("The built-in engine requires Rosetta. Steam and game compatibility with this baseline engine is still being tested.")
-                                .font(.callout).foregroundStyle(.secondary)
-                        }
-                    }
-                    if !useBundledWine || bundledWine == nil {
-                        Text("Choose the launcher file from a trusted Wine build for macOS.")
-                        pathField("Wine executable", value: $wine)
-                    }
-                    pathField("Steam environment", value: $prefix, directory: true)
-                    Text("The default environment is created when you run Steam Setup.")
+                step("Steam environment", icon: "gearshape.2") {
+                    Text(preferences.useBundled ? "Using built-in Wine 11.0" : "Using external Wine")
+                    SettingsLink { Text("Change Wine Engine…") }
+                    PathField(label: "Steam environment", value: $prefix, directory: true)
+                    Text("First launch can take longer while Wine creates this environment.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 step("Install Windows Steam", icon: "arrow.down.circle") {
                     Text("Download the Windows installer, select SteamSetup.exe, then run it. When Steam opens, sign in and install your game.")
                     Link("Get Windows Steam", destination: URL(string: "https://store.steampowered.com/about/")!)
-                    pathField("SteamSetup.exe", value: $installer)
+                    PathField(label: "SteamSetup.exe", value: $installer)
                     Button("Run Steam Setup") {
                         start(installer, installing: true)
-                    }.disabled(launcher.running || installer.isEmpty)
+                    }.disabled(launcher.isRunning(prefix) || installer.isEmpty)
                 }
                 step("Open Steam or launch a game", icon: "play.circle") {
                     Text("Select the installed Steam.exe in this environment. Leave the App ID blank to open Steam.")
-                    pathField("Steam.exe", value: $steamClient)
+                    PathField(label: "Steam.exe", value: $steamClient)
                     TextField("Steam App ID", text: $appID, prompt: Text("Optional, e.g. 271590"))
                         .textFieldStyle(.roundedBorder)
                     Toggle("Show Metal Performance HUD", isOn: $metalHUD)
+                    Toggle("Use software rendering for the Steam interface", isOn: $steamSoftwareRendering)
+                    if let logs = steamLogs {
+                        Button("Open Steam Logs") { NSWorkspace.shared.open(logs) }
+                    }
+                    Text("If Steam opens a blank window, quit Steam before retrying with software rendering.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    if preferences.useBundled {
+                        Text("This Wine build still lacks some TLS, font, and media features. If Steam cannot update or sign in, try a compatible external Wine build in Settings.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
                     HStack {
                         Button(appID.isEmpty ? "Open Steam" : "Launch Game") { start(steamClient) }
                             .buttonStyle(.borderedProminent)
-                            .disabled(launcher.running || (steamClient.isEmpty && suggestedClient == nil))
+                            .disabled(launcher.isRunning(prefix) || resolvedSteam == nil)
                     }
                     Text("GTA V Legacy Story Mode is a test target. Gameplay through WinBridge is still unverified.")
                         .font(.callout).foregroundStyle(.secondary)
@@ -147,18 +162,30 @@ private struct SetupView: View {
         return nil
     }
 
+    private var resolvedSteam: String? {
+        let entered = NSString(string: steamClient).expandingTildeInPath
+        return !entered.isEmpty && FileManager.default.fileExists(atPath: entered) ? entered : suggestedClient
+    }
+
+    private var steamLogs: URL? {
+        guard let resolvedSteam else { return nil }
+        let folder = URL(fileURLWithPath: resolvedSteam).deletingLastPathComponent().appendingPathComponent("logs")
+        return FileManager.default.fileExists(atPath: folder.path) ? folder : nil
+    }
+
     private func start(_ executable: String, installing: Bool = false) {
-        let program = executable.isEmpty ? (suggestedClient ?? "") : executable
-        if !installing && steamClient.isEmpty { steamClient = program }
+        let program = installing ? executable : (resolvedSteam ?? "")
+        if !installing { steamClient = program }
         launcher.start(
             runningMessage: installing ? "Steam Setup is running…" : "Wine is running…",
             completionMessage: installing ? "Steam Setup exited. Open Steam to continue." :
                 "Wine exited. Check Steam for the launch result."
         ) {
             try SteamCommand.make(
-                wine: (useBundledWine ? bundledWine : nil) ?? wine,
+                wine: preferences.engine ?? "",
                 prefix: prefix, windowsExecutable: program, installing: installing,
-                appID: appID, metalHUD: !installing && metalHUD
+                appID: appID, metalHUD: !installing && metalHUD,
+                softwareRendering: !installing && steamSoftwareRendering
             )
         }
     }
@@ -175,22 +202,7 @@ private struct SetupView: View {
         }
     }
 
-    private func pathField(_ label: String, value: Binding<String>, directory: Bool = false) -> some View {
-        HStack {
-            TextField(label, text: value).textFieldStyle(.roundedBorder)
-            Button("Choose…") {
-                let panel = NSOpenPanel()
-                panel.title = label
-                panel.canChooseFiles = !directory
-                panel.canChooseDirectories = directory
-                panel.canCreateDirectories = directory
-                panel.treatsFilePackagesAsDirectories = !directory
-                if panel.runModal() == .OK, let url = panel.url {
-                    value.wrappedValue = url.path
-                }
-            }.accessibilityLabel("Choose \(label)")
-        }
-    }
+
 }
 
 var bundledWine: String? {
@@ -220,18 +232,31 @@ struct LauncherStatus: View {
 @MainActor
 final class Launcher: ObservableObject {
     @Published private(set) var status = "Choose an application to begin."
-    @Published private(set) var running = false
     @Published private(set) var log: URL?
-    private var process: Process?
+    @Published private var active: [String: Process] = [:]
+    var running: Bool { !active.isEmpty }
+
+    func isRunning(_ prefix: String) -> Bool { active[normalized(prefix)] != nil }
+
+    private func normalized(_ path: String) -> String {
+        URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+    }
 
     func report(_ error: Error) { status = error.localizedDescription }
 
     func start(
         runningMessage: String, completionMessage: String, command: () throws -> WineInvocation
     ) {
-        guard !running else { return }
         do {
-            let child = try command().makeProcess()
+            let invocation = try command()
+            let prefix = normalized(invocation.environment["WINEPREFIX"] ?? "")
+            guard active[prefix] == nil else {
+                status = "A Windows command is already running in this environment."
+                return
+            }
+            let child = invocation.makeProcess()
+            let startTime = ProcessInfo.processInfo.systemUptime
             let files = FileManager.default
             let folder = try files.url(
                 for: .applicationSupportDirectory, in: .userDomainMask,
@@ -250,21 +275,20 @@ final class Launcher: ObservableObject {
                 let terminated = result.terminationReason == .uncaughtSignal
                 Task { @MainActor in
                     guard let self else { return }
-                    self.running = false
-                    self.process = nil
+                    self.active.removeValue(forKey: prefix)
                     if terminated {
                         self.status = "Wine stopped with signal \(code). Check the log."
                     } else if code != 0 {
                         self.status = "Wine exited with status \(code). Check the log."
                     } else {
-                        self.status = completionMessage
+                        let seconds = ProcessInfo.processInfo.systemUptime - startTime
+                        self.status = "\(completionMessage) Wine process time \(seconds.formatted(.number.precision(.fractionLength(1)))) s."
                     }
                 }
             }
             log = url
             try child.run()
-            process = child
-            running = true
+            active[prefix] = child
             status = runningMessage
         } catch {
             let failure = error as NSError

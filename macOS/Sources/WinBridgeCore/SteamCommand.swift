@@ -3,7 +3,7 @@ import Foundation
 public enum SteamCommand {
     public static func make(
         wine: String, prefix: String, windowsExecutable: String,
-        installing: Bool, appID: String = "", metalHUD: Bool = false,
+        installing: Bool, appID: String = "", metalHUD: Bool = false, softwareRendering: Bool = false,
         environment inherited: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> WineInvocation {
         let loader = try WineInvocation.loader(wine)
@@ -17,6 +17,7 @@ public enum SteamCommand {
         try WineInvocation.preparePrefix(prefix, allowNew: installing)
 
         var arguments = [program.path]
+        if !installing && softwareRendering { arguments.append("-cef-disable-gpu") }
         let appID = appID.trimmingCharacters(in: .whitespacesAndNewlines)
         if !installing && !appID.isEmpty {
             guard appID.utf8.count <= 10,

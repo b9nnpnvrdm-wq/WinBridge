@@ -19,6 +19,21 @@ final class SteamCommandTests: XCTestCase {
         XCTAssertEqual(command.environment["PATH"], "/usr/bin")
     }
 
+    func testSteamSoftwareRenderingIsOptionalAndSkipsInstaller() throws {
+        let fixture = try makeFixture()
+        let open = try SteamCommand.make(
+            wine: fixture.wine.path, prefix: fixture.prefix.path,
+            windowsExecutable: fixture.steam.path, installing: false, appID: "271590",
+            softwareRendering: true
+        )
+        XCTAssertEqual(open.arguments, [fixture.steam.path, "-cef-disable-gpu", "-applaunch", "271590"])
+        let install = try SteamCommand.make(
+            wine: fixture.wine.path, prefix: fixture.prefix.path,
+            windowsExecutable: fixture.steam.path, installing: true, softwareRendering: true
+        )
+        XCTAssertEqual(install.arguments, [fixture.steam.path])
+    }
+
     func testLaunchRejectsInvalidAppIDAndUninitializedPrefix() throws {
         let fixture = try makeFixture()
         XCTAssertThrowsError(try SteamCommand.make(

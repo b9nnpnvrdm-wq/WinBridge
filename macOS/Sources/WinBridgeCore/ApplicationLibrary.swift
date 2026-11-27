@@ -24,6 +24,24 @@ public struct ApplicationLibrary {
         try JSONEncoder().encode(profiles).write(to: catalog, options: [.atomic])
     }
 
+    public func profile(forExecutable url: URL, in profiles: [WindowsApplication]) throws -> WindowsApplication {
+        guard url.isFileURL, url.pathExtension.lowercased() == "exe" else {
+            throw WindowsError("Choose a Windows .exe file.")
+        }
+        let file = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard case .executable = try WindowsFile.inspect(file) else {
+            throw WindowsError("Choose an executable PE image.")
+        }
+        if let existing = profiles.first(where: {
+            guard $0.executable.hasPrefix("/") else { return false }
+            return URL(fileURLWithPath: $0.executable).standardizedFileURL.resolvingSymlinksInPath().path == file.path
+        }) { return existing }
+        var profile = try makeApplication()
+        profile.name = url.deletingPathExtension().lastPathComponent
+        profile.executable = file.path
+        return profile
+    }
+
     public func makeApplication() throws -> WindowsApplication {
         try FileManager.default.createDirectory(at: defaultStorage, withIntermediateDirectories: true)
         return WindowsApplication(name: "New Windows App", location: defaultStorage)
