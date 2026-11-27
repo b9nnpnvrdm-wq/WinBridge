@@ -53,16 +53,31 @@ jobs:
           }
           trap cleanup EXIT
 
-          "$runtime/wine" "$directory/SteamSetup.exe" /S >installer.log 2>&1 || {
-            tail -80 installer.log
-            exit 1
-          }
-          client=$(find "$WINEPREFIX/drive_c" -iname Steam.exe -print -quit)
+          "$runtime/wine" "$directory/SteamSetup.exe" /S >installer.log 2>&1 &
+          installer=$!
+          client=""
+          for attempt in {1..36}; do
+            if [[ -d "$WINEPREFIX/drive_c" ]]; then
+              client=$(find "$WINEPREFIX/drive_c" -iname Steam.exe -type f -print -quit)
+              [[ -z "$client" ]] || break
+            fi
+            if ! kill -0 "$installer" 2>/dev/null; then
+              status=0
+              wait "$installer" || status=$?
+              echo "SteamSetup Wine exit status: $status"
+              break
+            fi
+            sleep 4
+          done
+          echo "::group::Steam installer log"
+          tail -80 installer.log
+          echo "::endgroup::"
           if [[ -z "$client" ]]; then
-            tail -80 installer.log
-            echo "::error::SteamSetup did not install the client"
+            ps -Ao pid,comm | grep -Ei 'wine|steam' || true
+            echo "::error::Steam.exe was not installed within the probe window"
             exit 1
           fi
+          sleep 5
           echo 'Found installed Steam.exe.'
           "$runtime/wine" "$client" -cef-disable-gpu >steam.log 2>&1 &
           sleep 65
