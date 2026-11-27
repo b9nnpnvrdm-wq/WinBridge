@@ -1,0 +1,84 @@
+name: Diagnose Windows Steam bootstrap on macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: WinBridge preview release tag to test
+        required: true
+        default: preview-15a21786b335
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/steam-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  steam-bootstrap:
+    name: Run Steam without signing in
+    runs-on: macos-15
+    timeout-minutes: 9
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download WinBridge and the Windows Steam installer
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW: ${{ inputs.preview || 'preview-15a21786b335' }}
+        run: |
+          directory="$RUNNER_TEMP/steam-smoke"
+          mkdir "$directory"
+          cd "$directory"
+          gh release download "$PREVIEW" --pattern 'WinBridge-arm64.zip*'
+          shasum -a 256 -c WinBridge-arm64.zip.sha256
+          ditto -x -k WinBridge-arm64.zip .
+          curl --fail --location --retry 2 --silent --show-error \
+            https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe -o SteamSetup.exe
+      - name: Install Steam and inspect startup
+        timeout-minutes: 6
+        run: |
+          directory="$RUNNER_TEMP/steam-smoke"
+          cd "$directory"
+          runtime="$directory/WinBridge.app/Contents/SharedSupport/Wine/bin"
+          export WINEPREFIX="$directory/prefix"
+          export WINEDEBUG="-all,err+module,err+secur32,err+schannel,err+winediag"
+          export WINEDLLOVERRIDES="mscoree,mshtml="
+          cleanup() {
+            "$runtime/wineserver" -k || true
+            "$runtime/wineserver" -w || true
+          }
+          trap cleanup EXIT
+
+          "$runtime/wine" "$directory/SteamSetup.exe" /S >installer.log 2>&1 || {
+            tail -80 installer.log
+            exit 1
+          }
+          client=$(find "$WINEPREFIX/drive_c" -iname Steam.exe -print -quit)
+          if [[ -z "$client" ]]; then
+            tail -80 installer.log
+            echo "::error::SteamSetup did not install the client"
+            exit 1
+          fi
+          echo 'Found installed Steam.exe.'
+          "$runtime/wine" "$client" -cef-disable-gpu >steam.log 2>&1 &
+          sleep 65
+          tail -65 steam.log
+          logs="$(dirname "$client")/logs"
+          for name in bootstrap_log.txt cef_log.txt webhelper.txt; do
+            if [[ -f "$logs/$name" ]]; then
+              echo "::group::$name"
+              tail -35 "$logs/$name"
+              echo "::endgroup::"
+            fi
+          done
+
+          if pgrep -fi 'steam\.exe|steamwebhelper\.exe'; then
+            echo 'A Steam process remains active. The sign-in window was not checked.'
+          else
+            echo "::error::Steam processes exited after bootstrap"
+            exit 1
+          fi
