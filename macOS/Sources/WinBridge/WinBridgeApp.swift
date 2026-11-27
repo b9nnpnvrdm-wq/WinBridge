@@ -132,7 +132,7 @@ private struct SetupView: View {
                     Text("If Steam opens a blank window, quit Steam before retrying with software rendering.")
                         .font(.callout).foregroundStyle(.secondary)
                     if preferences.useBundled {
-                        Text("This Wine build still lacks some TLS, font, and media features. If Steam cannot update or sign in, try a compatible external Wine build in Settings.")
+                        Text("This Wine build still lacks some TLS and media features. If Steam cannot update or sign in, try a compatible external Wine build in Settings.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     HStack {

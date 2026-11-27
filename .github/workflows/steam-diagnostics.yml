@@ -7,10 +7,10 @@ on:
         description: WinBridge preview release tag to test
         required: true
         default: preview-15a21786b335
-  push:
+  workflow_run:
+    workflows: [macOS preview and download page]
+    types: [completed]
     branches: [main]
-    paths:
-      - '.github/workflows/steam-diagnostics.yml'
 
 permissions:
   contents: read
@@ -28,11 +28,16 @@ jobs:
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-          PREVIEW: ${{ inputs.preview || 'preview-15a21786b335' }}
+          PREVIEW: ${{ inputs.preview }}
+          PREVIEW_COMMIT: ${{ github.event.workflow_run.head_sha }}
         run: |
           directory="$RUNNER_TEMP/steam-smoke"
           mkdir "$directory"
           cd "$directory"
+          if [[ -n "$PREVIEW_COMMIT" ]]; then
+            PREVIEW="preview-${PREVIEW_COMMIT:0:12}"
+          fi
+          [[ "$PREVIEW" =~ ^preview-[a-f0-9]{12}$ ]]
           gh release download "$PREVIEW" --pattern 'WinBridge-arm64.zip*'
           shasum -a 256 -c WinBridge-arm64.zip.sha256
           ditto -x -k WinBridge-arm64.zip .
@@ -80,7 +85,7 @@ jobs:
           sleep 5
           echo 'Found installed Steam.exe.'
           "$runtime/wine" "$client" -cef-disable-gpu >steam.log 2>&1 &
-          sleep 65
+          sleep 120
           tail -65 steam.log
           logs="$(dirname "$client")/logs"
           for name in bootstrap_log.txt cef_log.txt webhelper.txt; do
@@ -91,6 +96,10 @@ jobs:
             fi
           done
 
+          if grep -Eqi 'unable to find a valid console font|unhandled division by zero' steam.log; then
+            echo "::error::Wine hit the font or debugger crash during Steam startup"
+            exit 1
+          fi
           if pgrep -fi 'steam\.exe|steamwebhelper\.exe'; then
             echo 'A Steam process remains active. The sign-in window was not checked.'
           else

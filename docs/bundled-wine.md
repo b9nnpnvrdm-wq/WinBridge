@@ -21,9 +21,10 @@ The runtime carries Wine's open-source implementations of Windows system
 components. Steam, Rockstar components and proprietary Windows files are
 supplied through their normal installers.
 
-The first integrated engine is a minimal baseline built against macOS system
-libraries. It omits GnuTLS, FreeType, GStreamer and Vulkan. It can therefore
-lack Windows TLS, font, multimedia and graphics capabilities required by
-specific applications. Use an external engine with the necessary components
+The engine includes FreeType 2.15.0 under the FreeType License (FTL).
+The release includes its exact source archive, and the engine carries its
+license and notices. The engine still omits GnuTLS, GStreamer and Vulkan.
+It can therefore lack Windows TLS, multimedia and graphics capabilities
+required by specific applications. Use an external engine with the necessary components
 for broader Steam testing. No GTA V compatibility or performance rating has
 been established for the built-in engine.

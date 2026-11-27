@@ -14,7 +14,7 @@ on:
 
 concurrency:
   group: winbridge-preview-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -38,26 +38,10 @@ jobs:
           path: |
             dist/WinBridge-Wine-runtime.tar.gz
             dist/wine-11.0-source.tar.gz
+            dist/freetype-2.15.0.tar.xz
           key: winbridge-wine-macos15-x64-${{ hashFiles('scripts/build-wine-macos.sh', 'scripts/audit-wine-runtime.py', 'scripts/patches/**', 'docs/bundled-wine.md') }}
-      - name: Match the previously verified Wine build recipe
+      - name: Build Wine if the matching runtime is not cached
         if: steps.wine-cache.outputs.cache-hit != 'true'
-        id: baseline
-        run: |
-          if git diff --quiet 6747142d9284b6b7473f747d7d329616a6bc8e5e HEAD -- \
-            scripts/build-wine-macos.sh scripts/audit-wine-runtime.py scripts/patches docs/bundled-wine.md; then
-            echo "matches=true" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/download-artifact@v8
-        if: steps.baseline.outputs.matches == 'true'
-        id: reuse
-        continue-on-error: true
-        with:
-          github-token: ${{ github.token }}
-          run-id: 46041068543
-          name: winbridge-wine
-          path: dist
-      - name: Build Wine if no matching artifact is available
-        if: steps.wine-cache.outputs.cache-hit != 'true' && steps.reuse.outcome != 'success'
         run: |
           brew list --versions bison || brew install bison
           ./scripts/build-wine-macos.sh
@@ -67,6 +51,7 @@ jobs:
           path: |
             dist/WinBridge-Wine-runtime.tar.gz
             dist/wine-11.0-source.tar.gz
+            dist/freetype-2.15.0.tar.xz
           if-no-files-found: error
           compression-level: 0
 
@@ -134,6 +119,7 @@ jobs:
             dist/WinBridge-arm64.zip
             dist/WinBridge-arm64.zip.sha256
             dist/wine-11.0-source.tar.gz
+            dist/freetype-2.15.0.tar.xz
           if-no-files-found: error
           compression-level: 0
 
@@ -160,9 +146,9 @@ jobs:
             echo "This revision already has a preview release."
             exit 0
           fi
-          gh release create "$tag" WinBridge-arm64.zip WinBridge-arm64.zip.sha256 wine-11.0-source.tar.gz \
+          gh release create "$tag" WinBridge-arm64.zip WinBridge-arm64.zip.sha256 wine-11.0-source.tar.gz freetype-2.15.0.tar.xz \
             --target "$GITHUB_SHA" --prerelease --title "WinBridge macOS preview (${GITHUB_SHA:0:12})" \
-            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Includes isolated Windows app profiles, EXE and MSI support, optional DLL imports, and the Wine 11.0 runtime with corresponding source. Requires Rosetta. GTA V gameplay remains unverified."
+            --notes "Apple Silicon, macOS 14 or later. Ad hoc signed for testing. No Developer ID or notarization. Includes first-run Wine setup, Finder and drag-and-drop app imports, and the Wine 11.0 runtime with FreeType and corresponding source. Requires Rosetta. GTA V gameplay remains unverified."
         working-directory: dist
 
   pages:

@@ -112,6 +112,8 @@ final class WindowsApplicationTests: XCTestCase {
         XCTAssertTrue(installed.contains { FileManager.default.fileExists(atPath: $0.path) })
         XCTAssertEqual(try execute(.uninstall), 0)
         XCTAssertFalse(installed.contains { FileManager.default.fileExists(atPath: $0.path) })
+        profile.executable = fixtures.appendingPathComponent("font-probe.exe").path
+        XCTAssertEqual(try execute(.run), 0, "A Windows GDI program must obtain nonzero font metrics")
     }
 
     private func temporaryDirectory() throws -> URL {

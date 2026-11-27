@@ -16,6 +16,16 @@ toolchain="llvm-mingw-${toolchain_version}-ucrt-macos-universal"
 toolchain_sha=2cab02a2e964bd4aae981150a45985d07c657cfa8d244959eb9e2dcc5eedd7b1
 
 mkdir -p "$output" "$work/wine-source" "$work/build" "$work/install"
+freetype_version=2.15.0
+freetype_sha=93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5
+freetype_archive="freetype-$freetype_version.tar.xz"
+if ! curl --fail --location --retry 2 --silent --show-error \
+  "https://download.savannah.gnu.org/releases/freetype/$freetype_archive" -o "$output/$freetype_archive"; then
+  curl --fail --location --retry 2 --silent --show-error \
+    "https://downloads.sourceforge.net/project/freetype/freetype2/$freetype_version/$freetype_archive" -o "$output/$freetype_archive"
+fi
+printf '%s  %s\n' "$freetype_sha" "$output/$freetype_archive" | shasum -a 256 --check
+tar -xf "$output/$freetype_archive" -C "$work"
 git -C "$work/wine-source" init --quiet
 git -C "$work/wine-source" fetch --quiet --depth=1 https://github.com/wine-mirror/wine.git "$wine_commit"
 git -C "$work/wine-source" checkout --quiet --detach FETCH_HEAD
@@ -41,13 +51,27 @@ export PATH="$(dirname "$BISON"):$(dirname "$CC"):$PATH:$work/$toolchain/bin"
 "$BISON" --version
 printf 'int main(void) { return 0; }\n' | "$CC" -x c - -o "$work/native-probe"
 "$work/native-probe"
+freetype_source="$work/freetype-$freetype_version"
+freetype_install="$work/freetype-install"
+(
+  cd "$freetype_source"
+  ./configure --prefix="$freetype_install" --enable-shared --disable-static \
+    --without-zlib --without-bzip2 --without-png --without-harfbuzz --without-brotli
+  make -j"$(sysctl -n hw.ncpu)"
+  make install
+)
+freetype_dylib="$freetype_install/lib/libfreetype.6.dylib"
+# Wine records the install name discovered when probing the dylib in configure.
+# Resolve it beside win32u.so when the end user starts Wine from WinBridge.app.
+install_name_tool -id '@loader_path/libfreetype.6.dylib' "$freetype_dylib"
+export PKG_CONFIG_PATH="$freetype_install/lib/pkgconfig"
 (
   cd "$work/build"
   if ! "$work/wine-source/configure" --prefix=/winbridge-wine \
     --enable-archs=i386,x86_64 --with-mingw="$work/$toolchain/bin/clang" \
     --disable-tests --disable-winebth_sys --with-coreaudio --without-x --without-wayland \
     --without-alsa --without-capi --without-cups --without-dbus --without-ffmpeg \
-    --without-fontconfig --without-freetype --without-gettext --without-gphoto \
+    --without-fontconfig --with-freetype --without-gettext --without-gphoto \
     --without-gnutls --without-gssapi --without-gstreamer --without-hwloc --without-inotify \
     --without-krb5 --without-netapi --without-opencl --without-oss --without-pcap \
     --without-pcsclite --without-pulse --without-sane --without-sdl --without-udev \
@@ -60,6 +84,11 @@ printf 'int main(void) { return 0; }\n' | "$CC" -x c - -o "$work/native-probe"
 )
 runtime="$work/install/winbridge-wine"
 [[ -x "$runtime/bin/wine" && -x "$runtime/bin/wineserver" ]]
+install -m 755 "$freetype_dylib" "$runtime/lib/wine/x86_64-unix/libfreetype.6.dylib"
+mkdir -p "$runtime/share/licenses/freetype"
+install -m 644 "$freetype_source/docs/FTL.TXT" "$runtime/share/licenses/freetype/FTL.TXT"
+printf 'This software uses parts of the FreeType Project (https://www.freetype.org). All rights reserved.\n' \
+  > "$runtime/share/licenses/freetype/NOTICE"
 "$runtime/bin/wine" --version | grep -Fx 'wine-11.0'
 
 # Carry the upstream notices with the runtime. Keep the exact source alongside
